@@ -130,8 +130,8 @@ flowchart TD
 ```mermaid
 flowchart TD
   A["에이전트 업데이트"] --> B["CI 파이프라인"] --> C["agent-redteam 실행"] --> D{"게이트"}
-  D -->|"exit 0"| E["✅ 배포 진행"]
-  D -->|"exit 1"| F["⛔ 배포 중단 + 리포트"]
+  D -->|통과 exit 0| E["✅ 배포 진행"]
+  D -->|실패 exit 1| F["⛔ 배포 중단 + 리포트"]
 ```
 
 </details>
