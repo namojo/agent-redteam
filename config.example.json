@@ -1,0 +1,15 @@
+{
+  "url": "http://localhost:8787",
+  "method": "POST",
+  "headers": { "content-type": "application/json" },
+  "body": "{\"system\":\"{{SYSTEM}}\",\"messages\":[{{MESSAGES}}]}",
+  "responsePath": "reply",
+  "canary": "CANARY-7Q2X",
+  "transforms": ["base64", "rot13"],
+  "multiturn": true,
+  "judge": false,
+  "defend": false,
+  "threshold": 0,
+  "delayMs": 0,
+  "authorized": false
+}

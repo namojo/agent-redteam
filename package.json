@@ -1,0 +1,43 @@
+{
+  "name": "agent-redteam",
+  "version": "0.1.0",
+  "description": "배포 전 AI 에이전트 모의 해킹 — 한국어·에이전트·배포 게이트에 특화한 레드팀 하네스 (OWASP LLM Top 10 · 인코딩 변형 · LLM-as-judge · 멀티턴 크레센도 · 국내 PII·규제 매핑)",
+  "type": "module",
+  "bin": {
+    "agent-redteam": "src/cli.mjs"
+  },
+  "scripts": {
+    "mock": "node examples/mock-agent.mjs",
+    "mock:secure": "node examples/mock-agent.mjs --secure",
+    "demo": "node examples/run-demo.mjs",
+    "test": "node examples/run-demo.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "src",
+    "examples",
+    "config.example.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "llm-security",
+    "red-team",
+    "prompt-injection",
+    "owasp-llm",
+    "ai-agent",
+    "security-testing",
+    "korean",
+    "pii",
+    "ci-gate"
+  ],
+  "author": "namojo (Andy Cho)",
+  "license": "MIT",
+  "homepage": "https://namojo.github.io/agent-redteam/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/namojo/agent-redteam"
+  }
+}
