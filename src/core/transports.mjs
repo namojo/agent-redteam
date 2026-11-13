@@ -20,6 +20,7 @@ export function routeMock(path, body, { mode, quirks = {} } = {}) {
 
 export function createMockTransport({ mode, quirks = {} } = {}) {
   return async function mockTransport(req) {
+    if (req.signal && req.signal.aborted) throw new TransportError('ABORTED', '요청이 취소되었습니다');
     const { host, path } = pathOf(String(req.url || ''));
     const m = mode ?? host;
     const json = { 'content-type': 'application/json' };
@@ -44,6 +45,9 @@ export function createFetchTransport({ fetchImpl = globalThis.fetch } = {}) {
     if (typeof fetchImpl !== 'function') throw new TransportError('NETWORK', 'fetch를 사용할 수 없는 환경입니다');
     const ctrl = new AbortController();
     let timedOut = false;
+    if (req.signal && req.signal.aborted) throw new TransportError('ABORTED', '요청이 취소되었습니다');
+    const onAbort = () => ctrl.abort();
+    if (req.signal) req.signal.addEventListener('abort', onAbort, { once: true });
     const timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, req.timeoutMs || 60000);
     try {
       const res = await fetchImpl(req.url, { method: req.method, headers: req.headers, body: req.body, signal: ctrl.signal });
@@ -52,10 +56,12 @@ export function createFetchTransport({ fetchImpl = globalThis.fetch } = {}) {
       if (res.headers && typeof res.headers.forEach === 'function') res.headers.forEach((v, k) => { headers[String(k).toLowerCase()] = v; });
       return { status: res.status, headers, body };
     } catch (e) {
+      if (req.signal && req.signal.aborted) throw new TransportError('ABORTED', '요청이 취소되었습니다');
       if (timedOut) throw new TransportError('TIMEOUT', `요청 시간 초과 (${req.timeoutMs}ms)`);
       throw new TransportError('NETWORK', `네트워크 오류: ${(e && e.message) || e} — 브라우저라면 대상이 CORS를 허용하는지 확인하십시오`);
     } finally {
       clearTimeout(timer);
+      if (req.signal) req.signal.removeEventListener('abort', onAbort);
     }
   };
 }

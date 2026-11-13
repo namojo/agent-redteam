@@ -3,7 +3,7 @@
  * Isomorphic module: network goes through the injected transport only.
  */
 import { VERSION, REPORT_SCHEMA_VERSION, CATEGORY_INFO, CATEGORY_ORDER } from './constants.mjs';
-import { ConfigError } from './errors.mjs';
+import { ConfigError, abortError } from './errors.mjs';
 import { PROBE_TOOLS } from './probes.mjs';
 import { TRANSFORMS } from './transforms.mjs';
 import { maskSensitive } from './oracles.mjs';
@@ -30,10 +30,16 @@ const VERDICT_KEYS = { VULNERABLE: 'vulnerable', BLOCKED: 'blocked', INCONCLUSIV
 
 /**
  * @param config normalized config (normalizeConfig().config)
- * @param {{transport: Function, judgeTransport?: Function, onProgress?: Function, sleep?: Function, now?: Function, extraWarnings?: object[]}} deps
+ * @param {{transport: Function, judgeTransport?: Function, onProgress?: Function, sleep?: Function, now?: Function, extraWarnings?: object[], signal?: AbortSignal}} deps
+ *
+ * Cancellation: when `deps.signal` aborts, no new request is scheduled, the in-flight request is aborted
+ * (the signal travels on the transport request), and runSuite REJECTS with an AbortError
+ * (`name 'AbortError'`, `code 'ABORTED'`). `err.report` holds the partial report of fully completed cases,
+ * flagged `aborted: true`, with the gate forced to FAIL — an aborted run can never be a PASS.
  */
 export async function runSuite(config, deps = {}) {
-  const { transport, onProgress, sleep, extraWarnings = [] } = deps;
+  const { transport, onProgress, sleep, extraWarnings = [], signal } = deps;
+  const isAborted = () => Boolean(signal && signal.aborted);
   const now = deps.now || Date.now;
   const judgeTransport = deps.judgeTransport || transport;
   if (typeof transport !== 'function') throw new TypeError('runSuite: deps.transport function required');
@@ -53,7 +59,7 @@ export async function runSuite(config, deps = {}) {
     return v;
   };
 
-  const clientDeps = { network: config.network, sleep, now, secrets };
+  const clientDeps = { network: config.network, sleep, now, secrets, signal };
   const client = createClient(config.target, { transport, ...clientDeps });
   const judgeOn = Boolean(config.judge.enabled && config.judge.target);
   const judgeClient = judgeOn ? createClient(config.judge.target, { transport: judgeTransport, ...clientDeps }) : null;
@@ -74,8 +80,11 @@ export async function runSuite(config, deps = {}) {
   const judgeStats = { calls: 0, failures: 0, resolved: 0 };
   const rawTrials = [];
   const caseResults = [];
+  let abortedRun = false;
 
+  caseLoop:
   for (let ci = 0; ci < plan.cases.length; ci++) {
+    if (isAborted()) { abortedRun = true; break; }
     const c = plan.cases[ci];
     const caseCount = plan.cases.length;
     emit({ type: 'case-start', caseIndex: ci, caseCount, caseId: c.caseId });
@@ -88,6 +97,8 @@ export async function runSuite(config, deps = {}) {
         const prompt = c.turns[i];
         history.push({ role: 'user', content: prompt });
         const res = await client.send({ system, messages: history.slice(), tools: c.sendTools ? PROBE_TOOLS : null });
+        // an aborted case is dropped entirely: a half-measured case must not count as a result
+        if (isAborted() || (!res.ok && res.error.code === 'ABORTED')) { abortedRun = true; break caseLoop; }
         if (!res.ok) {
           turns.push({
             turn: i + 1, prompt, visible: '', reasoningStripped: false, toolCalls: [],
@@ -117,6 +128,7 @@ export async function runSuite(config, deps = {}) {
           // the judge sees masked/redacted text only (C-3): validated PII and secrets keep their shape but not their value
           const jm = buildJudgeMessages({ goal: c.probe.goal, responseText: clean(lastOk.visible), toolCalls: (lastOk.toolCalls || []).map((tc) => ({ name: tc.name, arguments: maskDeep(tc.arguments ?? {}) })), maxChars: config.judge.maxResponseChars });
           const jr = await judgeClient.send({ system: jm.system, messages: jm.messages, tools: null });
+          if (isAborted() || (!jr.ok && jr.error.code === 'ABORTED')) { abortedRun = true; break caseLoop; }
           if (!jr.ok) {
             judgeStats.failures += 1;
             trial.judge = { verdict: 'UNCLEAR', reason: 'judge 호출 실패', used: false, error: { code: jr.error.code, message: jr.error.message } };
@@ -181,7 +193,12 @@ export async function runSuite(config, deps = {}) {
   }
 
   const summary = summarize(caseResults, repeats);
-  const gate = evaluateGate(summary, config.gate);
+  let gate = evaluateGate(summary, config.gate);
+  const abortReason = `점검이 중단되었습니다 (완료 ${caseResults.length}/${plan.cases.length} 케이스). 중단된 실행은 통과로 보지 않습니다.`;
+  if (abortedRun) {
+    const reasons = [abortReason, ...gate.reasons];
+    gate = { ...gate, pass: false, status: 'FAIL', reasons, summaryText: reasons[0] + (reasons.length > 1 ? ` 외 ${reasons.length - 1}건` : '') };
+  }
 
   const warnings = [];
   const addWarning = (w) => {
@@ -189,6 +206,7 @@ export async function runSuite(config, deps = {}) {
   };
   for (const w of extraWarnings || []) addWarning(w);
   for (const w of plan.warnings) addWarning(w);
+  if (abortedRun) addWarning({ code: 'ABORTED', level: 'warn', message: abortReason });
   if (summary.cases > 0 && summary.inconclusive * 2 > summary.cases) {
     addWarning({ code: 'MOSTLY_INCONCLUSIVE', level: 'warn', message: `미결 케이스가 전체의 절반을 넘습니다 (${summary.inconclusive}/${summary.cases}). 빈 응답·responsePath·추론 블록(thinking) 설정을 확인하십시오. 미결은 안전하다는 뜻이 아닙니다.` });
   }
@@ -208,7 +226,7 @@ export async function runSuite(config, deps = {}) {
   const t = config.target;
   const jt = config.judge.target;
   const categories = Object.keys(summary.byCategory);
-  return {
+  const report = {
     schemaVersion: REPORT_SCHEMA_VERSION,
     tool: { name: 'agent-redteam', version: VERSION },
     startedAt: new Date(startedAt).toISOString(),
@@ -250,6 +268,12 @@ export async function runSuite(config, deps = {}) {
     gate,
     regulations: REGULATIONS.filter((x) => categories.includes(x.owasp)).map((x) => ({ ...x })),
   };
+  if (abortedRun) {
+    // partial report: only fully completed cases (so cases.length < plan.cases is expected here)
+    report.aborted = true;
+    throw abortError(abortReason, { report });
+  }
+  return report;
 }
 
 function cleanError(e, clean) {

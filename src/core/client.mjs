@@ -17,15 +17,25 @@ const DEFAULT_NETWORK = { timeoutMs: 60000, retries: 2, retryBaseDelayMs: 500, r
 
 /**
  * @param target normalized Target
- * @param {{transport: Function, network?: object, sleep?: Function, now?: Function, secrets?: string[]}} deps
+ * @param {{transport: Function, network?: object, sleep?: Function, now?: Function, secrets?: string[], signal?: AbortSignal}} deps
+ * With `signal`: the request object carries `signal` to the transport, waits end early on abort, and an
+ * aborted send returns `{ ok: false, error: { code: 'ABORTED' } }` without retrying.
  * @returns {{ send(input): Promise<SendResult> }}
  */
-export function createClient(target, { transport, network = {}, sleep = defaultSleep, now = Date.now, secrets = [] } = {}) {
+export function createClient(target, { transport, network = {}, sleep: rawSleep = defaultSleep, now = Date.now, secrets = [], signal } = {}) {
   if (typeof transport !== 'function') throw new TypeError('createClient: transport function required');
   const net = { ...DEFAULT_NETWORK, ...network };
   const secretList = [...new Set([...(secrets || []), ...secretsOf(target)])].filter((s) => typeof s === 'string' && s.length >= 4).sort((a, b) => b.length - a.length);
   let sentCount = 0;
   let lastStart = null;
+  const aborted = () => Boolean(signal && signal.aborted);
+  let abortWait = null;
+  const sleep = (ms) => {
+    if (!signal) return rawSleep(ms);
+    if (signal.aborted) return Promise.resolve();
+    if (!abortWait) abortWait = new Promise((r) => signal.addEventListener('abort', r, { once: true }));
+    return Promise.race([rawSleep(ms), abortWait]);
+  };
 
   const fail = (code, message, extra, started, attempts) => ({
     ok: false,
@@ -50,18 +60,22 @@ export function createClient(target, { transport, network = {}, sleep = defaultS
     let request;
     try {
       request = buildRequest(target, input, { timeoutMs: net.timeoutMs });
+      if (signal) request.signal = signal;
     } catch (e) {
       return fail('PARSE', '요청을 만들 수 없습니다: ' + (e && e.message), {}, started, attempts);
     }
     const maxAttempts = Math.max(1, (net.retries | 0) + 1);
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (aborted()) return fail('ABORTED', '요청이 취소되었습니다', {}, started, attempts);
       await pace();
+      if (aborted()) return fail('ABORTED', '요청이 취소되었습니다', {}, started, attempts);
       attempts += 1;
       const isLast = attempt === maxAttempts - 1;
       let res;
       try {
         res = await transport(request);
       } catch (e) {
+        if (aborted() || (e && e.code === 'ABORTED')) return fail('ABORTED', '요청이 취소되었습니다', {}, started, attempts);
         const code = e instanceof TransportError || (e && ['TIMEOUT', 'NETWORK', 'TLS'].includes(e.code)) ? e.code : 'NETWORK';
         if (code === 'NETWORK' && !isLast) {
           await sleep(Math.min(MAX_WAIT_MS, net.retryBaseDelayMs * 2 ** attempt));
@@ -69,6 +83,7 @@ export function createClient(target, { transport, network = {}, sleep = defaultS
         }
         return fail(code, (e && e.message) || String(e), {}, started, attempts);
       }
+      if (aborted()) return fail('ABORTED', '요청이 취소되었습니다', {}, started, attempts);
       const status = res.status;
       if (RETRY_STATUS.has(status) && !isLast) {
         const ra = res.headers && res.headers['retry-after'];

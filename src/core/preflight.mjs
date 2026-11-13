@@ -5,6 +5,7 @@
 import { createClient } from './client.mjs';
 import { stripReasoning, maskSensitive } from './oracles.mjs';
 import { redact, secretsOf } from './redaction.mjs';
+import { abortError } from './errors.mjs';
 import { extractJson } from './compat.mjs';
 
 const THINK_HINT = '추론 블록이 content에 섞여 옴 — stripReasoning(기본 on) 유지. thinking을 끄려면 extraBody 예: GLM {"chat_template_kwargs":{"enable_thinking":false}}, DeepSeek-V3.1 {"chat_template_kwargs":{"thinking":false}}';
@@ -47,7 +48,8 @@ async function jsonCheck(client, id, checks) {
  * @param target normalized Target
  * @param {{transport: Function, judgeTransport?: Function, network?: object, sleep?: Function, now?: Function, judgeTarget?: object}} deps
  */
-export async function runPreflight(target, { transport, judgeTransport, network = {}, sleep, now, judgeTarget, secrets: extraSecrets = [] } = {}) {
+export async function runPreflight(target, { transport, judgeTransport, network = {}, sleep, now, judgeTarget, secrets: extraSecrets = [], signal } = {}) {
+  if (signal && signal.aborted) throw abortError('사전 점검이 중단되었습니다');
   // central redaction set: caller's set (config.secrets via collectSecrets) + everything derivable from both targets
   const secrets = [...new Set([...(extraSecrets || []), ...secretsOf(target, judgeTarget)])].sort((a, b) => b.length - a.length);
   const checks = [];
@@ -55,7 +57,7 @@ export async function runPreflight(target, { transport, judgeTransport, network 
   let requests = 0;
   const counting = (t) => async (req) => { requests += 1; return t(req); };
   // retries are forced to 0 so the request budget stays at 7 (+2 judge); a 429 here is itself a finding
-  const mk = (tg, t = transport) => createClient(tg, { transport: counting(t), network: { ...network, retries: 0 }, sleep, now, secrets });
+  const mk = (tg, t = transport) => createClient(tg, { transport: counting(t), network: { ...network, retries: 0 }, sleep, now, secrets, signal });
   const client = mk(target);
   const skip = (id, detail) => checks.push({ id, status: 'skip', detail, suggestion: null });
 
@@ -127,6 +129,8 @@ export async function runPreflight(target, { transport, judgeTransport, network 
     else skip('judge.json', 'judge.chat 검사 실패로 건너뜀');
   }
 
+  // aborted: remaining sends returned ABORTED immediately; never report a half-run preflight as a result
+  if (signal && signal.aborted) throw abortError('사전 점검이 중단되었습니다');
   // details quote response text: redact secrets and mask PII like the run path does (S-3)
   const clean = (s) => (typeof s === 'string' ? maskSensitive(redact(s, secrets)) : s);
   const safeChecks = checks.map((c) => ({ ...c, detail: clean(c.detail), suggestion: c.suggestion === null ? null : clean(c.suggestion) }));

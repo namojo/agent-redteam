@@ -30,12 +30,16 @@ export function createNodeTransport({ ca, insecure = false, _request } = {}) {
   return function nodeTransport(req) {
     return new Promise((resolve, reject) => {
       let settled = false;
+      const signal = req.signal;
+      let onAbort = null;
       const done = (fn, v) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        if (signal && onAbort) signal.removeEventListener('abort', onAbort);
         fn(v);
       };
+      if (signal && signal.aborted) { settled = true; reject(new TransportError('ABORTED', '요청이 취소되었습니다')); return; }
       let url;
       try {
         url = new URL(req.url);
@@ -77,6 +81,14 @@ export function createNodeTransport({ ca, insecure = false, _request } = {}) {
         return;
       }
       r.on('error', (e) => done(reject, mapNodeError(e)));
+      if (signal) {
+        onAbort = () => {
+          const err = new TransportError('ABORTED', '요청이 취소되었습니다');
+          if (r) r.destroy(err);
+          done(reject, err);
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
       if (hasBody) r.end(String(req.body));
       else r.end();
     });
