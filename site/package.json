@@ -9,7 +9,9 @@
     "serve": "node serve.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/jetbrains-mono": "5.2.8",
     "marked": "18.1.1",
-    "mermaid": "12.2.0"
+    "mermaid": "12.2.0",
+    "pretendard": "1.3.9"
   }
 }

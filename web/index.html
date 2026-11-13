@@ -6,28 +6,26 @@
   <meta name="color-scheme" content="light dark">
   <meta name="referrer" content="no-referrer">
   <title>웹 콘솔 · agent-redteam</title>
+  <link rel="stylesheet" href="../assets/system.css">
   <link rel="stylesheet" href="console.css">
   <script type="module" src="console.mjs"></script>
 </head>
-<body>
+<body class="console-page">
   <a class="skip" href="#main">본문으로 건너뛰기</a>
   <header class="site-header">
-    <div class="bar">
-      <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>agent-redteam</a>
-      <nav aria-label="사이트">
-        <ul>
-          <li><a href="../index.html">문서 사이트</a></li>
-          <li><a href="../manual.html">매뉴얼</a></li>
-          <li><a href="./" aria-current="page">웹 콘솔</a></li>
-          <li><a href="https://github.com/namojo/agent-redteam" rel="noopener">GitHub</a></li>
-        </ul>
+    <div class="site-bar">
+      <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"><i></i><i></i></span><span>agent-redteam</span></a>
+      <nav class="site-nav" aria-label="사이트">
+        <ul><li><a href="../index.html">소개</a></li><li><a href="../readme.html">개요</a></li><li><a href="../manual.html">매뉴얼</a></li><li><a href="../architecture.html">아키텍처</a></li><li><a href="./" aria-current="page">웹 콘솔</a></li><li><a href="https://github.com/namojo/agent-redteam" rel="noopener">GitHub</a></li></ul>
       </nav>
     </div>
   </header>
 
   <main id="main" class="console">
-    <h1>웹 콘솔</h1>
-    <p class="lede">CLI와 같은 엔진(<code>src/core</code>)을 브라우저에서 그대로 실행합니다. 판정·게이트·리포트는 모두 엔진이 만들고, 이 화면은 결과를 보여 주기만 합니다.</p>
+    <header class="console-head">
+      <h1>웹 콘솔</h1>
+      <p class="lede">CLI와 같은 엔진(<code>src/core</code>)을 브라우저에서 그대로 실행합니다. 판정·게이트·리포트는 모두 엔진이 만들고, 이 화면은 결과를 보여 주기만 합니다.</p>
+    </header>
 
     <noscript><p class="callout callout-error">이 콘솔은 JavaScript(ES 모듈)가 필요합니다.</p></noscript>
     <p id="boot-error" class="callout callout-error" hidden></p>
@@ -308,7 +306,11 @@
   </dialog>
 
   <footer class="site-footer">
-    <p>엔진 <span id="engine-version"></span> · 판정은 휴리스틱 오라클과 선택적 LLM judge에 기반하며 오탐·미탐이 있을 수 있습니다 · MIT License</p>
+    <div class="site-footer-inner">
+      <p>엔진 <span id="engine-version" class="mono"></span> · 판정은 휴리스틱 오라클과 선택적 LLM judge에 기반하며 오탐·미탐이 있을 수 있습니다 · MIT License</p>
+      <p>글꼴 Pretendard · JetBrains Mono — SIL Open Font License 1.1 (<a href="../assets/fonts/pretendard/LICENSE.txt">Pretendard</a>, <a href="../assets/fonts/jetbrains-mono/LICENSE.txt">JetBrains Mono</a>)</p>
+      <p><a href="https://github.com/namojo/agent-redteam" rel="noopener">github.com/namojo/agent-redteam</a></p>
+    </div>
   </footer>
 </body>
 </html>

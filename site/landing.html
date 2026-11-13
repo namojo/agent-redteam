@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{{title}}</title>
+  <meta name="description" content="{{description}}">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{{title}}">
+  <meta property="og:description" content="{{description}}">
+  <link rel="stylesheet" href="assets/system.css">
+  <link rel="stylesheet" href="assets/landing.css">
+  <script src="assets/site.js" defer></script>
+</head>
+<body class="landing">
+<!--
+THESIS: 배포 파이프라인을 철도 연동(interlocking) 신호 제어반으로 보여 준다. 측정하지 못하면 신호는 적색으로 남는다(fail-safe = fail-closed). SaaS 히어로 + 기능 카드 그리드를 거부한다.
+OWN-WORLD: 회녹색 에나멜 제어반(라이트) / 슬레이트 제어반(다크), 검은 선로선, 발광 없는 평면 신호등(적=취약·FAIL, 녹=차단·PASS, 황=미결), 각인 명판, 세로 신호기, 항상 어두운 터미널 띠. Pretendard Variable, 숫자·ID·코드만 JetBrains Mono.
+STORY: 첫 화면에서 공격 케이스 lamp가 모두 적색, 게이트 FAIL·exit 1을 본다 → 방어 스위치를 직접 눌러 녹색·PASS로 바뀌는 것을 본다 → 선로를 따라 문제·해법·증거·도입·한계를 읽고 → 웹 콘솔로 간다.
+FIRST VIEWPORT: 좌 5/12 제목·리드·CTA(웹 콘솔 primary). 우 7/12 제어반: 카테고리별 lamp 행, 선로(에이전트→공격→판정→게이트→배포), 신호기, 터미널 띠, 방어 OFF/ON 스위치. 모바일은 제목 아래로 쌓임.
+FORM: interlocking signal panel, 자체 후보 목록 3번, seed 9d7e7aea. Raises: 단일 chase sweep(drum-machine step row), 숫자 출처 표기(treasure map provenance), 같은 축척의 전/후 패널(curved-crease registered views), 문서 고정 읽기 폭(zine measure).
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+-->
+  <a class="skip" href="#main">본문으로 건너뛰기</a>
+{{header}}
+  <main id="main">
+{{hero}}
+{{sections}}
+  </main>
+{{footer}}
+</body>
+</html>

@@ -5,26 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>{{title}}</title>
-  <link rel="stylesheet" href="assets/style.css">
+  <meta name="description" content="{{description}}">
+  <link rel="stylesheet" href="assets/system.css">
+  <link rel="stylesheet" href="assets/docs.css">
+  <script src="assets/site.js" defer></script>
 </head>
-<body>
+<body class="docs">
   <a class="skip" href="#main">본문으로 건너뛰기</a>
-  <header class="site-header">
-    <div class="bar">
-      <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span>agent-redteam</a>
-      <nav aria-label="사이트">
-        <ul>
-          {{nav}}
-        </ul>
-      </nav>
-    </div>
-  </header>
-  <main id="main" class="doc">
+{{header}}
+  <div class="doc-shell">
+{{toc}}
+    <main id="main" class="doc">
+      <article class="prose doc-body">
 {{content}}
-  </main>
-  <footer class="site-footer">
-    <p>이 페이지의 원문: <a href="{{source}}" rel="noopener">{{sourceName}}</a> · MIT License</p>
-  </footer>
+      </article>
+      <footer class="doc-foot">
+{{pager}}
+        <p class="doc-source">원문 <a href="{{source}}" rel="noopener">{{sourceName}}</a> — 사이트는 저장소의 Markdown에서 빌드됩니다.</p>
+      </footer>
+    </main>
+  </div>
+{{footer}}
   {{mermaid}}
 </body>
 </html>
