@@ -93,8 +93,9 @@ node src/cli.mjs run --mock secure
 ```bash
 cp config.example.json config.json
 # config.json의 target.url · model · systemPrompt · oracles.canary 를 채운다.
-# 예시 설정은 ${LLM_API_KEY} ${GATEWAY_KEY} ${JUDGE_API_KEY} 환경변수를 읽는다.
-export LLM_API_KEY=... GATEWAY_KEY=... JUDGE_API_KEY=...
+# 예시 설정은 ${LLM_API_KEY} ${GATEWAY_KEY} 환경변수를 읽는다.
+# ${JUDGE_API_KEY}는 judge를 켤 때(--judge 또는 judge.enabled)만 필요하다.
+export LLM_API_KEY=... GATEWAY_KEY=...
 
 node src/cli.mjs probe --config config.json --yes            # 엔드포인트 사전 점검 (요청 최대 7회)
 node src/cli.mjs run --config config.json --yes --out report.md --json report.json

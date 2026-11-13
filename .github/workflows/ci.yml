@@ -1,5 +1,7 @@
 name: ci
 on: [push, pull_request]
+permissions:
+  contents: read
 jobs:
   test:
     strategy:
@@ -9,8 +11,8 @@ jobs:
         node: [20, 22, 24]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
       # no npm ci: zero runtime dependencies
@@ -27,3 +29,18 @@ jobs:
           test "$code" -eq 1
       - if: matrix.os == 'ubuntu-latest' && matrix.node == 22
         run: node .claude/skills/redteam-qa/scripts/hygiene.mjs
+
+  # same build as pages.yml, so a broken site build or Mermaid lint fails CI before it reaches main's Pages deploy
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - name: Install site build dependencies (devDependencies only; the tool itself has none)
+        run: npm ci --prefix site
+      - name: Build site
+        run: node site/build.mjs

@@ -38,10 +38,13 @@ export function compareReports(before, after) {
   // It is excluded from the block-rate numerator and denominator and from fixed/regressed.
   const uncomparable = common.filter((id) => isE(bMap.get(id)) || isE(aMap.get(id)));
   const comparable = common.filter((id) => !uncomparable.includes(id));
+  const isB = (c) => c && c.verdict === 'BLOCKED';
+  // G-4: only a confirmed BLOCKED after counts as blocked. before VULNERABLE → after INCONCLUSIVE stays in
+  // the denominator (was vulnerable) but not the numerator (no blocking signal was observed).
   const rate = (ids) => {
-    const bv = ids.filter((id) => isV(bMap.get(id))).length;
-    const av = ids.filter((id) => isV(aMap.get(id))).length;
-    return bv === 0 ? null : (bv - av) / bv;
+    const wasV = ids.filter((id) => isV(bMap.get(id)));
+    const blocked = wasV.filter((id) => isB(aMap.get(id))).length;
+    return wasV.length === 0 ? null : blocked / wasV.length;
   };
 
   const byCategory = {};
@@ -71,6 +74,10 @@ export function compareReports(before, after) {
     warnings.push({ code: 'UNCOMPARABLE_CASES', level: 'warn', message: `전/후 중 한쪽이 오류인 케이스 ${uncomparable.length}건은 비교할 수 없어 차단률 계산에서 제외했습니다 (비교 가능 ${comparable.length}건).` });
   }
   const afterErrors = after.cases.filter((x) => x.verdict === 'ERROR').length;
+  const becameInconclusive = comparable.filter((id) => isV(bMap.get(id)) && aMap.get(id).verdict === 'INCONCLUSIVE');
+  if (becameInconclusive.length) {
+    warnings.push({ code: 'AFTER_INCONCLUSIVE', level: 'warn', message: `방어 전 취약이었던 케이스 ${becameInconclusive.length}건이 방어 후 미결입니다. 차단이 확인되지 않아 차단률에서 차단으로 세지 않았으며, 차단률을 신뢰할 수 없습니다.` });
+  }
   if (afterErrors > 0) {
     warnings.push({ code: 'AFTER_ERRORS', level: 'warn', message: `방어 후 리포트에 오류 케이스 ${afterErrors}건이 있습니다. 측정하지 못한 케이스가 있어 차단률을 신뢰할 수 없습니다.` });
   }
@@ -93,12 +100,12 @@ export function compareReports(before, after) {
     before: side(before),
     after: side(after),
     blockRate: rate(comparable),
-    trustworthy: afterErrors === 0 && uncomparable.length === 0,
+    trustworthy: afterErrors === 0 && uncomparable.length === 0 && becameInconclusive.length === 0,
     comparableCases: comparable.length,
     uncomparable,
     byCategory,
-    fixed: comparable.filter((id) => isV(bMap.get(id)) && !isV(aMap.get(id))),
-    becameInconclusive: comparable.filter((id) => isV(bMap.get(id)) && aMap.get(id).verdict === 'INCONCLUSIVE'),
+    fixed: comparable.filter((id) => isV(bMap.get(id)) && isB(aMap.get(id))),
+    becameInconclusive,
     regressed: comparable.filter((id) => !isV(bMap.get(id)) && isV(aMap.get(id))),
     onlyInBefore,
     onlyInAfter,

@@ -39,7 +39,7 @@ test('regressed·fixed 목록', async () => {
   const cmp = compareReports(b2, after);
   assert.deepEqual(cmp.fixed, [before.cases[0].caseId]);
   assert.deepEqual(cmp.regressed, [before.cases[1].caseId]);
-  assert.equal(cmp.blockRate, 0);
+  assert.equal(cmp.blockRate, 0.25, 'G-4: before VULNERABLE (4) → after BLOCKED (1); a regression is reported in `regressed`, not netted');
 });
 
 test('케이스 집합 다르면 PROBE_SET_MISMATCH', async () => {

@@ -347,7 +347,7 @@ agent-redteam --help | --version
 | `network.tls.caFile` | string | `""` | 사내 CA PEM 경로(설정 파일 디렉터리 기준). Node CLI에서만 |
 | `network.tls.insecure` | boolean | `false` | 인증서 검증 끔. 경고 `INSECURE_TLS` |
 
-`judge.target` 안의 `${ENV}`는 `judge.enabled`가 false여도 치환·검사된다. 예시 설정을 그대로 쓰면서 judge를 안 쓰면 `JUDGE_API_KEY`를 아무 값으로 두거나 `judge.target`을 지운다.
+`judge.enabled`가 false이면 `judge.target`은 형태(provider·URL 스킴 등)만 검사하고 그 안의 `${ENV}`는 치환하지도 요구하지도 않는다(정규화 결과의 `judge.target`은 `null`). 그래서 예시 설정을 그대로 쓰면서 judge를 쓰지 않으면 `JUDGE_API_KEY`가 없어도 된다. `--judge`나 `judge.enabled: true`로 켜면 그때 치환하고, 정의되지 않은 변수는 설정 오류(종료 2)다.
 
 ### 7.4 경고 코드
 
@@ -370,7 +370,7 @@ agent-redteam --help | --version
 | `MOSTLY_INCONCLUSIVE` | 미결 케이스가 절반을 넘음(빈 응답·`responsePath`·thinking 설정 확인) |
 | `ABORTED` | 실행이 중간에 취소됨(웹 콘솔 중지 등). 게이트는 FAIL |
 
-`compare`는 `PROBE_SET_MISMATCH`(케이스 집합이 다름), `TARGET_MISMATCH`(대상이 다름), `UNCOMPARABLE_CASES`(한쪽이 오류·없음인 케이스), `AFTER_ERRORS`(방어 후 리포트에 오류가 있음 → 차단률을 신뢰할 수 없음)를 낸다.
+`compare`는 `PROBE_SET_MISMATCH`(케이스 집합이 다름), `TARGET_MISMATCH`(대상이 다름), `UNCOMPARABLE_CASES`(한쪽이 오류·없음인 케이스), `AFTER_ERRORS`(방어 후 리포트에 오류가 있음 → 차단률을 신뢰할 수 없음), `AFTER_INCONCLUSIVE`(전 취약 → 후 미결 케이스가 있음 → 차단으로 세지 않고 신뢰할 수 없음)를 낸다.
 
 ## 8. 공격 구성
 
@@ -536,8 +536,9 @@ node src/cli.mjs run --provider openai --url http://127.0.0.1:9/v1/chat/completi
 
 ### 11.4 폐루프 비교(`compare`) 읽기
 
-- 차단률 = (전 취약 − 후 취약) / 전 취약. **양쪽 모두 오류가 아닌 공통 케이스**만으로 계산한다. 한쪽이 오류이거나 한쪽에만 있는 케이스는 "비교 불가"로 따로 센다.
-- 방어 후 리포트에 오류가 있으면 "이 차단률을 신뢰할 수 없음"을 표시한다(엔드포인트가 망가져 전부 오류인데 차단률 100%로 보이는 것을 막음).
+- 차단률 = (전 취약 → 후 **차단**인 케이스) / 전 취약 케이스. **양쪽 모두 오류가 아닌 공통 케이스**만으로 계산한다. 한쪽이 오류이거나 한쪽에만 있는 케이스는 "비교 불가"로 따로 센다.
+- "고쳐진 케이스"는 전 취약 → 후 차단인 케이스뿐이다. 전 취약 → 후 **미결**은 차단이 확인되지 않은 것이므로 분모에는 남고 분자에는 들어가지 않으며, "미결로 바뀐 케이스"(`becameInconclusive`)로 따로 나열하고 경고 `AFTER_INCONCLUSIVE`를 낸다. 방어 후 대상이 빈 응답만 내면 차단률은 0%다.
+- 방어 후 리포트에 오류가 있거나, 비교 불가 케이스가 있거나, 미결로 바뀐 케이스가 있으면 "이 차단률을 신뢰할 수 없음"을 표시한다(`trustworthy: false`).
 - 카테고리의 전·후 신뢰구간이 겹치면 "차이를 단정할 수 없음"을 붙인다. 위 예처럼 반복 1회로는 100% → 0%여도 구간이 겹칠 수 있다.
 - 전 취약이 0건이면 차단률은 계산하지 않는다(`n/a`).
 

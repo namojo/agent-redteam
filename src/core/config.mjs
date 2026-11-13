@@ -188,12 +188,14 @@ export function normalizeConfig(raw, { env = {}, baseDir = null } = {}) {
   };
   // Every value pulled from the environment into a credential-bearing field is a secret (central redaction set).
   const envSecrets = [];
-  const subst = (value, path) => String(value).replace(ENV_RE, (m, name) => {
+  // C-5: a disabled judge is validated for shape only — its ${ENV} placeholders are neither resolved nor required
+  let envOff = false;
+  const subst = (value, path) => (envOff ? String(value) : String(value).replace(ENV_RE, (m, name) => {
     const v = env ? env[name] : undefined;
     if (v === undefined || v === null) { err(path, `환경변수 ${name}이(가) 정의되지 않았습니다`); return ''; }
     envSecrets.push({ path, value: String(v) });
     return String(v);
-  });
+  }));
 
   const normTarget = (t, path, { judge = false } = {}) => {
     unknown(t, TARGET_KEYS, path + '.');
@@ -213,7 +215,9 @@ export function normalizeConfig(raw, { env = {}, baseDir = null } = {}) {
         const host = url.slice('mock://'.length).split(/[/?#]/)[0];
         if (!MOCK_HOSTS.includes(host)) err(path + '.url', 'mock URL의 호스트는 vulnerable 또는 secure여야 합니다');
       } else {
-        try { new URL(url); } catch { err(path + '.url', 'URL 형식이 올바르지 않습니다'); }
+        if (!(envOff && url.includes('${'))) {
+          try { new URL(url); } catch { err(path + '.url', 'URL 형식이 올바르지 않습니다'); }
+        }
       }
     }
     const model = str(t, 'model', path + '.model', '');
@@ -338,8 +342,11 @@ export function normalizeConfig(raw, { env = {}, baseDir = null } = {}) {
     delete base.systemPrompt;
     delete base.temperature;
     delete base.maxTokens;
+    envOff = !judgeEnabled;
     judgeTarget = normTarget({ ...base, ...jt }, 'judge.target', { judge: true });
+    envOff = false;
     sameAsTarget = judgeTarget.url === target.url && judgeTarget.model === target.model;
+    if (!judgeEnabled) judgeTarget = null; // unused while disabled; never carries unresolved placeholders
   }
   const judge = {
     enabled: judgeEnabled,

@@ -147,7 +147,7 @@ test('G2 일부 오류: 오류 케이스는 분자·분모에서 빠진다', asy
   after.cases[1].verdict = 'INCONCLUSIVE';
   const cmp = compareReports(before, after);
   assert.equal(cmp.comparableCases, 16);
-  assert.equal(cmp.blockRate, 1, '16 comparable cases, all no longer vulnerable');
+  assert.equal(cmp.blockRate, 15 / 16, 'G-4: the INCONCLUSIVE case stays in the denominator only');
   assert.deepEqual(cmp.uncomparable, [before.cases[0].caseId]);
   assert.ok(!cmp.fixed.includes(before.cases[0].caseId));
   assert.deepEqual(cmp.becameInconclusive, [before.cases[1].caseId]);

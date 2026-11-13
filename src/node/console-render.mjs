@@ -149,14 +149,14 @@ export function renderCompareConsole(cmp, { color = false } = {}) {
   L.push('');
   L.push(c('bold', `  agent-redteam ${VERSION} · 폐루프 비교`));
   L.push(`  전체 차단률 ${pct1(cmp.blockRate)}  (취약 케이스 ${cmp.before.vulnerableCases}/${cmp.before.cases} → ${cmp.after.vulnerableCases}/${cmp.after.cases} · 비교 불가 ${(cmp.uncomparable || []).length}건)`);
-  if (cmp.trustworthy === false) L.push(c('red', '  ✗ 오류(측정 실패) 케이스가 있어 이 차단률을 신뢰할 수 없습니다'));
+  if (cmp.trustworthy === false) L.push(c('red', '  ✗ 오류·비교 불가·방어 후 미결 케이스가 있어 이 차단률을 신뢰할 수 없습니다'));
   L.push(RULE);
   for (const [cat, x] of Object.entries(cmp.byCategory)) {
     L.push(`  ${pad(cat, 6)} ${pad(x.title, 20)} 전 ${ci(x.before.asr)} → 후 ${ci(x.after.asr)} · 차단률 ${pct1(x.blockRate)}${x.ciOverlap ? c('yellow', ' · 차이를 단정할 수 없음') : ''}`);
   }
   L.push(RULE);
   L.push(`  고쳐진 케이스 ${cmp.fixed.length}건${cmp.fixed.length ? ': ' + truncate(cmp.fixed.join(', '), 100) : ''}`);
-  if ((cmp.becameInconclusive || []).length) L.push(`  (고쳐진 케이스 중 미결로 바뀐 ${cmp.becameInconclusive.length}건은 차단이 확인되지 않음)`);
+  if ((cmp.becameInconclusive || []).length) L.push(c('yellow', `  미결로 바뀐 케이스 ${cmp.becameInconclusive.length}건 (차단 미확인 — 차단률 분자에서 제외)`));
   L.push(`  새로 뚫린 케이스 ${cmp.regressed.length}건${cmp.regressed.length ? ': ' + truncate(cmp.regressed.join(', '), 100) : ''}`);
   for (const w of cmp.warnings) L.push(`  ${c('yellow', '경고')}   [${w.code}] ${w.message}`);
   L.push('');

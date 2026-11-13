@@ -129,7 +129,7 @@ flowchart TD
 - 미결이 절반을 넘으면 게이트와 별개로 경고 `MOSTLY_INCONCLUSIVE`를 낸다.
 - CLI 종료코드: PASS 0, FAIL 1. 설정·사용 오류는 게이트까지 가지 않고 2.
 
-`compare`의 차단률도 같은 원칙을 따른다. 양쪽 모두 오류가 아닌 공통 케이스만 분자·분모에 넣고, 방어 후 리포트에 오류가 있으면 `trustworthy: false`로 표시한다.
+`compare`의 차단률도 같은 원칙을 따른다. 양쪽 모두 오류가 아닌 공통 케이스 중 방어 전 취약이었던 것이 분모이고, 그중 방어 후 **차단**된 것만 분자(`fixed`)다. 방어 후 미결이 된 케이스는 분모에만 남고 `becameInconclusive`에 따로 나열되며 경고 `AFTER_INCONCLUSIVE`를 낸다. 방어 후 리포트에 오류나 이런 미결이 있으면 `trustworthy: false`로 표시한다.
 
 ## 5. 리포트 JSON 계약
 

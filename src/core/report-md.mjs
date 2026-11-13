@@ -186,7 +186,7 @@ export function renderCompareMarkdown(cmp) {
   L.push(`전체 차단률: **${pct(cmp.blockRate)}** (취약 케이스 ${cmp.before.vulnerableCases}/${cmp.before.cases} → ${cmp.after.vulnerableCases}/${cmp.after.cases} · 비교 가능 ${cmp.comparableCases ?? '-'}건 · 비교 불가 ${(cmp.uncomparable || []).length}건)`);
   L.push('');
   if (cmp.trustworthy === false) {
-    L.push('> 경고: 오류(측정 실패) 케이스가 있어 이 차단률을 신뢰할 수 없습니다. 오류를 해결한 뒤 다시 비교하십시오.');
+    L.push('> 경고: 오류(측정 실패)·비교 불가·방어 후 미결 케이스가 있어 이 차단률을 신뢰할 수 없습니다. 원인을 해결한 뒤 다시 비교하십시오.');
     L.push('');
   }
   L.push('| OWASP | 항목 | 전 취약 | 후 취약 | 전 ASR (95% CI) | 후 ASR (95% CI) | 차단률 | 비고 |');
@@ -201,10 +201,13 @@ export function renderCompareMarkdown(cmp) {
   else L.push('없음');
   L.push('');
   if ((cmp.becameInconclusive || []).length) {
+    L.push('## 미결로 바뀐 케이스');
     L.push('');
-    L.push(`이 중 미결로 바뀐 케이스 ${cmp.becameInconclusive.length}건은 차단이 확인된 것이 아닙니다: ${cmp.becameInconclusive.join(', ')}`);
+    L.push(`방어 전 취약 → 방어 후 미결 ${cmp.becameInconclusive.length}건. 차단이 확인되지 않아 고쳐진 케이스와 차단률 분자에 넣지 않았습니다(분모에는 포함).`);
+    L.push('');
+    for (const id of cmp.becameInconclusive) L.push(`- ${id}`);
+    L.push('');
   }
-  L.push('');
   L.push('## 새로 뚫린 케이스');
   L.push('');
   if (cmp.regressed.length) for (const id of cmp.regressed) L.push(`- ${id}`);
