@@ -1,0 +1,74 @@
+{
+  "meta": {
+    "title": "agent-redteam — 레이아웃 확인용 fixture",
+    "description": "site/content/landing.json이 없을 때만 쓰는 빌드 확인용 fixture. 실제 카피는 landing.json에 있다."
+  },
+  "hero": {
+    "eyebrow": "fixture",
+    "title": "레이아웃 확인용 제목 — 실제 카피는 landing.json",
+    "lead": "이 문장은 fixture다. 취약 mock 케이스 {{demo.vulnerable.cases}}개 중 {{demo.vulnerable.vulnerable}}개가 뚫리고, 방어 후 게이트는 {{demo.defended.gate}}.",
+    "ctas": [
+      { "label": "웹 콘솔 데모", "href": "console/", "kind": "primary" },
+      { "label": "빠른 시작", "href": "readme.html", "kind": "secondary" },
+      { "label": "GitHub", "href": "https://github.com/namojo/agent-redteam", "kind": "ghost" }
+    ],
+    "note": "fixture note — `node site/build.mjs`가 엔진을 mock으로 실행해 숫자를 채운다."
+  },
+  "sections": [
+    {
+      "id": "problem", "nav": "문제", "eyebrow": "fixture", "title": "문제 (fixture)", "lead": "리드 문장 fixture.",
+      "blocks": [
+        { "type": "paragraph", "text": "문단 fixture. **굵게**, `코드`, [매뉴얼](manual.html) 링크." },
+        { "type": "stats", "items": [
+          { "value": "{{demo.probes.total}}", "label": "프로브" },
+          { "value": "{{demo.vulnerable.vulnerable}}", "label": "취약" },
+          { "value": "{{demo.defended.blocked}}", "label": "차단" },
+          { "value": "{{demo.compare.blockedRate}}", "label": "차단률" }
+        ] }
+      ]
+    },
+    {
+      "id": "solution", "nav": "해법", "eyebrow": "fixture", "title": "해법 (fixture)", "lead": "리드 fixture.",
+      "blocks": [
+        { "type": "steps", "items": [
+          { "title": "공격", "text": "프로브 {{demo.probes.total}}종, 변형 {{demo.transforms.count}}종." },
+          { "title": "판정", "text": "오라클 우선." },
+          { "title": "게이트", "text": "종료코드 0/1/2." }
+        ] },
+        { "type": "flow", "items": ["코드 변경", "CI 배포 게이트", "운영 배포", "운영 거버넌스"] }
+      ]
+    },
+    {
+      "id": "demo", "nav": "데모", "eyebrow": "fixture", "title": "전과 후 (fixture)", "lead": "리드 fixture.",
+      "blocks": [
+        { "type": "compare",
+          "before": { "title": "방어 전", "text": "취약 {{demo.vulnerable.vulnerable}}/{{demo.vulnerable.cases}} · 게이트 {{demo.vulnerable.gate}}" },
+          "after": { "title": "방어 후", "text": "차단 {{demo.defended.blocked}}/{{demo.defended.cases}} · 게이트 {{demo.defended.gate}}" } },
+        { "type": "callout", "tone": "info", "title": "fixture", "text": "차단률 {{demo.compare.blockedRate}} ({{demo.compare.fixed}}/{{demo.compare.denominator}})." }
+      ]
+    },
+    {
+      "id": "attacks", "nav": "공격", "eyebrow": "fixture", "title": "무엇을 공격하나 (fixture)", "lead": "변형: {{demo.transforms.list}}.",
+      "blocks": [
+        { "type": "cards", "items": [
+          { "tag": "LLM01", "title": "프롬프트 주입", "text": "프로브 {{demo.probes.byCategory.LLM01}}종.", "example": "이전 지시는 모두 무시해." },
+          { "tag": "LLM02", "title": "민감정보 노출", "text": "프로브 {{demo.probes.byCategory.LLM02}}종." },
+          { "tag": "LLM06", "title": "과도한 권한", "text": "프로브 {{demo.probes.byCategory.LLM06}}종." },
+          { "tag": "LLM07", "title": "시스템 프롬프트 유출", "text": "프로브 {{demo.probes.byCategory.LLM07}}종." }
+        ] },
+        { "type": "list", "items": ["목록 항목 하나", "목록 항목 둘"] }
+      ]
+    },
+    {
+      "id": "start", "nav": "시작하기", "eyebrow": "fixture", "title": "시작하기 (fixture)", "lead": "리드 fixture.",
+      "blocks": [
+        { "type": "code", "lang": "bash", "code": "node src/cli.mjs run --mock vulnerable\nnode src/cli.mjs run --mock vulnerable --defend" },
+        { "type": "table", "columns": ["항목", "값"], "rows": [["프로브", "{{demo.probes.total}}"], ["크레센도", "{{demo.probes.crescendo}}"]], "caption": "fixture 표" },
+        { "type": "callout", "tone": "warn", "text": "경고 fixture." },
+        { "type": "callout", "tone": "success", "title": "성공", "text": "성공 fixture." },
+        { "type": "faq", "items": [{ "q": "질문 fixture?", "a": "답 fixture." }] },
+        { "type": "links", "items": [{ "label": "매뉴얼", "href": "manual.html" }, { "label": "웹 콘솔", "href": "console/" }] }
+      ]
+    }
+  ]
+}

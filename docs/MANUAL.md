@@ -621,7 +621,7 @@ node src/cli.mjs run --mock vulnerable --quiet; test $? -eq 1
 - 진행 중 "중지"로 멈출 수 있다. 중지된 실행은 통과로 보지 않는다.
 - 정규식 lookbehind를 쓰므로 Safari 16.4 이상 등 최신 브라우저가 필요하다.
 
-로컬에서 문서 사이트와 콘솔을 띄우려면(빌드 의존성은 `site/`에만 있고 문서 사이트를 만들 때만 필요):
+로컬에서 문서 사이트와 콘솔을 띄우려면(빌드 의존성은 `site/`에만 있고 문서 사이트를 만들 때만 필요). 콘솔의 공통 스타일(`assets/system.css`)은 빌드가 만들므로 `web/`를 직접 서빙하지 말고 빌드된 사이트로 본다:
 
 ```bash
 npm ci --prefix site

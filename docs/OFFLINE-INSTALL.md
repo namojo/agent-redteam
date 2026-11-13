@@ -5,7 +5,7 @@
 ## 1. 준비물
 
 - **Node.js 20 이상**(`node --version`). 20·22·24를 CI에서 검사한다. 사내 표준 Node 배포본을 쓰면 된다.
-- 문서 사이트를 사내에서 다시 빌드할 계획이 없다면 그 밖의 도구는 필요 없다. 사이트 빌드 의존성(`marked`, `mermaid`)은 `site/package.json`에만 있고 **문서 사이트를 만들 때만** 필요하다(7절).
+- 문서 사이트를 사내에서 다시 빌드할 계획이 없다면 그 밖의 도구는 필요 없다. 사이트 빌드 의존성(`marked`, `mermaid`, 글꼴 `pretendard`·`@fontsource-variable/jetbrains-mono`)은 `site/package.json`에만 있고 **문서 사이트를 만들 때만** 필요하다(7절).
 
 ## 2. 반입 파일 만들기 (인터넷이 되는 PC에서)
 

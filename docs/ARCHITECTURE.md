@@ -8,8 +8,39 @@ agent-redteam 0.2.0 기준. 사용법은 [MANUAL](MANUAL.md), 개요는 [README]
 - **Node 쪽은 얇게.** `src/node/`는 인자 파싱, 파일 읽기·쓰기, `node:http`/`node:https` 전송(사내 CA·타임아웃), 콘솔 렌더링만 한다.
 - **결정적 오라클 우선, judge는 보조.** 실제 행동(도구 호출)과 심어 둔 비밀(카나리)이 가장 강한 증거다. LLM judge는 오라클이 결정하지 못한 미결에만 쓰고, 오라클이 결정한 표본으로 judge 자체의 일치도를 잰다.
 - **fail-closed.** 측정하지 못한 것(오류, 0케이스, 전부 미결, 중단된 실행)은 통과가 아니다.
-- **런타임 의존성 0.** 폐쇄망에 파일 복사만으로 반입한다. 문서 사이트 빌드 의존성(`marked`, `mermaid`)은 `site/package.json`에만 있다.
+- **런타임 의존성 0.** 폐쇄망에 파일 복사만으로 반입한다. 사이트 빌드 의존성(`marked`, `mermaid`, 자체 호스팅 글꼴 `pretendard`·`@fontsource-variable/jetbrains-mono`)은 `site/package.json`에만 있다.
 - **비밀은 기록하지 않는다.** 키·헤더 값·`${ENV}`로 들어온 값은 하나의 비밀값 집합으로 모아 리포트·콘솔·오류 메시지 어디에서든 `***`로 가린다.
+
+### 1.1 위협 모델
+
+agent-redteam은 대상 에이전트의 **클라이언트**로 동작하며, 사용자 한 명이 대화 창으로 할 수 있는 공격을 흉내 낸다. 대상 소유자의 권한을 받은 시험 환경을 전제로 한다.
+
+**공격자가 통제하는 것**
+
+- 사용자 턴의 내용: 지시 덮어쓰기(한국어·영어), 역할극, 인코딩 변형(Base64·ROT13·Leet·분할·자모 분리).
+- 사용자 턴 안에 붙여 넣은 문서: 간접 주입(`LLM01-indirect`)은 "요약할 메일" 속에 지시를 숨긴다. 실제 검색(RAG)·도구 결과 경로로 주입하지는 않는다.
+- 대화 히스토리: 멀티턴 크레센도는 고정 3턴으로 신뢰를 쌓은 뒤 요구 수위를 올린다.
+
+공격자가 통제하지 **않는** 것: 시스템 프롬프트(점검자가 카나리를 심는 곳), 도구 정의와 권한, 모델 가중치, 서빙 인프라, 다른 사용자의 세션.
+
+**지키려는 자산**: 시스템 프롬프트와 그 안의 카나리, 비밀값(키·토큰), 국내 개인정보(주민등록번호·휴대폰·카드번호), 도구 권한(타인 데이터 조회, 파괴적 작업, 외부 전송).
+
+**관찰하는 것**
+
+- 응답 텍스트. content에 섞여 온 추론 블록(`<think>` 등)도 클라이언트에 전달된 것으로 보고 카나리를 찾는다.
+- 응답의 구조화된 도구 호출: openai의 `tool_calls`, anthropic의 `tool_use`, http는 `toolCallsPath`로 지정한 배열. openai·anthropic에는 가짜 도구 정의를 보내므로 도구는 아무것도 실행되지 않는다.
+- 요청 실패(HTTP 오류·타임아웃·TLS·파싱). 측정 실패는 오류로 남고 게이트에서 통과로 치지 않는다.
+
+**관찰하지 않는 것**: 도구가 실제로 실행됐는지와 그 부작용, 서버 로그, `reasoning_content` 같은 별도 응답 필드, 텍스트로 온 도구 호출(`<tool_call>…`, 미결로 남음), 응답이 화면에 렌더링된 뒤의 결과.
+
+**다루지 않는 위협**
+
+- OWASP LLM Top 10 2025 중 LLM01·02·06·07 밖의 항목: 공급망(LLM03), 데이터·모델 오염(LLM04), 부적절한 출력 처리(LLM05), 벡터·임베딩 약점(LLM08, 로드맵), 허위 정보(LLM09), 무제한 소비(LLM10).
+- 실제 검색 문서·웹 페이지·도구 응답을 통한 간접 주입, 이미지·음성 입력.
+- 적응형 공격자(응답을 보고 공격을 새로 만드는 LLM 공격자). 프로브는 고정이다.
+- 인증·인가 우회, 네트워크·인프라 취약점, 서비스 거부, 모델 추출.
+
+그래서 게이트 PASS는 "이 위협 모델 안에서, 고정 프로브와 고른 변형으로, 결정적 증거로 뚫린 케이스가 허용치 이하였다"는 뜻이다.
 
 ## 2. 모듈 구조
 
@@ -47,8 +78,16 @@ src/
     mock-server.mjs        startMockServer: 로컬 HTTP mock + 사내 엔드포인트 quirk 흉내(테스트·예제 공용)
 examples/                  mock-agent.mjs(서버 CLI), run-demo.mjs(폐루프 데모), *.config.json
 test/                      node:test, 네트워크는 127.0.0.1 가짜 서버만
-web/                       웹 콘솔(빌드 없음, ../src/core/index.mjs를 import)
-site/                      문서 사이트 빌드(build.mjs, serve.mjs, template.html, style.css)
+web/                       웹 콘솔(번들 없음. ../src/core/index.mjs를 import, 스타일은 빌드된 ../assets/system.css)
+site/                      Pages 사이트 빌드
+  build.mjs                Markdown→HTML, 랜딩 조립, 링크·앵커·Mermaid 검사, 복사
+  demo.mjs                 빌드 때 엔진을 mock으로 실행해 랜딩 숫자(demo.json)를 만듦
+  landing.html             랜딩 템플릿 (index.html)
+  content/landing.json     랜딩 카피. 숫자는 demo.json 경로를 가리키는 자리표시자
+  template.html            문서 페이지 템플릿
+  styles/                  tokens.css·base.css(→ assets/system.css), landing.css, docs.css
+  client/site.js           복사 버튼·목차·랜딩 제어반 스위치
+  serve.mjs                의존성 없는 로컬 정적 서버
 ```
 
 의존 방향: `node/*` → `core/*`만 가능하다. `core` 안에서는 `constants·errors` ← `probes·transforms·oracles·metrics·regulations·redaction` ← `verdict·compat` ← `client·config·judge·mock-agent` ← `plan·transports·gate` ← `runner·preflight·compare·report-md` ← `index` 순서로만 import하고 순환은 없다.
@@ -193,6 +232,8 @@ Report
 
 ## 7. 웹 콘솔과 문서 사이트
 
-- `web/index.html`·`web/console.mjs`·`web/console.css`는 빌드 없이 동작한다. `console.mjs`는 `../src/core/index.mjs`를 상대 경로로 import한다. 판정·게이트·비교·Markdown 렌더링을 웹에 다시 구현하지 않는다.
-- `site/build.mjs`가 `README.md`와 `docs/*.md` 다섯 문서를 HTML로 만들고, `web/` → `_site/console/`, `src/core/` → `_site/src/core/`로 복사해 같은 상대 구조를 유지한다. Mermaid는 자체 호스팅하고, 엣지 라벨의 위험 문자(부등호·따옴표·괄호)를 빌드 단계에서 검사한다.
+- 웹 콘솔(`web/index.html`·`web/console.mjs`·`web/console.css`)은 번들러 없이 `../src/core/index.mjs`를 상대 경로로 import한다. 판정·게이트·비교·Markdown 렌더링을 웹에 다시 구현하지 않는다. 공통 디자인 토큰과 컴포넌트는 빌드가 만드는 `../assets/system.css`에서 가져오므로, 콘솔은 빌드된 사이트(`node site/build.mjs` 후 `node site/serve.mjs` → `/console/`)로 본다. 저장소 루트를 그대로 서빙하면 엔진은 돌지만 스타일이 빠진다.
+- 랜딩(`index.html`)은 `site/landing.html` 템플릿에 `site/content/landing.json` 카피를 채워 만든다. 카피의 숫자는 `demo.json`의 경로(예: `demo.vulnerable.cases`)를 이중 중괄호로 감싼 자리표시자이고, 빌드 때 `site/demo.mjs`가 core 엔진을 `createMockTransport`로 세 번(취약 mock, 같은 mock + 방어 가드, 전·후 비교) 실행해 `_site/data/demo.json`을 만든 뒤 채운다. 모르는 키·블록 형식은 빌드 실패(종료 1)다. 손으로 적은 숫자가 없으므로 프로브를 추가하면 랜딩 숫자도 따라 바뀐다.
+- 문서 페이지는 `README.md` → `readme.html`, `docs/*.md` 네 문서 → `manual.html`·`architecture.html`·`offline-install.html`·`example-report.html`로 만든다. 문서 안의 `README.md` 링크는 `readme.html`로 바뀐다. `web/` → `_site/console/`, `src/core/` → `_site/src/core/`로 복사해 같은 상대 구조를 유지한다.
+- 스타일은 `site/styles/`의 토큰 하나를 원본으로 `_site/assets/system.css`(글꼴 @font-face + 토큰 + 공통 컴포넌트)를 만들고 랜딩·문서·콘솔이 함께 쓴다. 글꼴(Pretendard, JetBrains Mono)과 Mermaid는 `site/node_modules`에서 `_site/assets/`로 복사해 자체 호스팅한다(CDN 없음). Mermaid 엣지 라벨의 위험 문자(부등호·따옴표·괄호)는 빌드 맨 앞에서 검사한다.
 - 배포는 `.github/workflows/pages.yml`(main push → `npm ci --prefix site` → `node site/build.mjs` → GitHub Pages).
