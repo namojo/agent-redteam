@@ -297,3 +297,8 @@ pre.excerpt {
 }
 
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+/* compare trust + aborted */
+.trust-badge { margin-left: 0.6rem; font-size: 0.9rem; vertical-align: middle; }
+.aborted-banner strong { font-size: 1.05rem; }
+.gate .gate-warning { margin: 0.2rem 0 0; }

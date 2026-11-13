@@ -68,6 +68,26 @@ function start(core) {
   const clip = (s, n) => { const t = String(s ?? ''); return t.length > n ? t.slice(0, n) + '…' : t; };
   const transformLabel = (id) => (TRANSFORMS[id] ? TRANSFORMS[id].label : id);
   const verdictBadge = (v) => h('span', { class: `verdict v-${v}` }, VERDICT_LABELS[v] || v);
+  /**
+   * Display-only context for short evidence. Refusal evidence is just the matched phrase (e.g. "릴 수 없"),
+   * and the report has no separate context field, so show the matched phrase inside its turn response
+   * (a report field, already masked by core). Returns null when there is nothing better than c.evidence.
+   */
+  function evidenceContext(c) {
+    if (c.source !== 'refusal' || !c.evidence) return null;
+    for (const t of c.trials || []) {
+      for (const tn of t.turns || []) {
+        const resp = typeof tn.response === 'string' ? tn.response : '';
+        const i = tn.evidence === c.evidence ? resp.indexOf(c.evidence) : -1;
+        if (i < 0) continue;
+        const radius = 40;
+        const start = Math.max(0, i - radius);
+        const end = Math.min(resp.length, i + c.evidence.length + radius);
+        return (start > 0 ? '…' : '') + resp.slice(start, end).replace(/\s+/g, ' ').trim() + (end < resp.length ? '…' : '');
+      }
+    }
+    return null;
+  }
   const stamp = (iso) => String(iso || new Date().toISOString()).replace(/[:.]/g, '-');
 
   function announce(msg) {
@@ -134,44 +154,39 @@ function start(core) {
 
   // ---------------------------------------------------------------------------
   // transports, progress, stop
+  //
+  // Cancellation is core's: runSuite(config, { signal }) stops scheduling, aborts the in-flight
+  // request (req.signal) and rejects with AbortError whose err.report is the partial report
+  // (aborted: true, gate forced FAIL). The transports below just pass req through.
 
-  /** Sleep that returns early when the run is stopped (runSuite accepts an injected sleep). */
-  const abortableSleep = (signal) => (ms) => new Promise((resolve) => {
-    if (signal.aborted) return resolve();
-    const t = setTimeout(resolve, ms);
-    signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
-  });
+  const yieldTick = () => new Promise((r) => setTimeout(r, 0));
 
-  /**
-   * runSuite has no cancel signal, so Stop makes every further transport call fail immediately
-   * (and in-flight fetches abort). The run then finishes quickly and its report is discarded.
-   */
-  function stoppable(transport, signal) {
-    return async (req) => {
-      if (signal.aborted) throw new TransportError('NETWORK', '사용자가 실행을 중지했습니다');
-      return transport(req);
-    };
-  }
-
-  function mockTransport(signal) {
+  function mockTransport() {
     const base = createMockTransport();
     // yield to the event loop so the progress bar can paint between mock requests
-    return stoppable(async (req) => { await new Promise((r) => setTimeout(r, 0)); return base(req); }, signal);
+    return async (req) => { await yieldTick(); return base(req); };
   }
 
-  function fetchTransport(signal) {
-    const fetchImpl = (url, init = {}) => {
-      const inner = init.signal;
-      const ctrl = new AbortController();
-      const relay = () => ctrl.abort();
-      if (inner) { if (inner.aborted) ctrl.abort(); else inner.addEventListener('abort', relay, { once: true }); }
-      if (signal.aborted) ctrl.abort(); else signal.addEventListener('abort', relay, { once: true });
-      return fetch(url, { ...init, signal: ctrl.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
+  /**
+   * Demo-only fake target that answers every request with an empty assistant message (OpenAI shape).
+   * It shows how the engine treats a target that says nothing: undecided cases, never a PASS.
+   */
+  function emptyTransport() {
+    return async (req) => {
+      await yieldTick();
+      if (req.signal && req.signal.aborted) throw new TransportError('ABORTED', '중단됨');
+      const body = { id: 'empty-1', object: 'chat.completion', model: 'mock-empty-agent', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: '' } }] };
+      return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
     };
-    return stoppable(createFetchTransport({ fetchImpl }), signal);
   }
 
-  const transportFor = (url, signal) => (isMockUrl(url) ? mockTransport(signal) : fetchTransport(signal));
+  function fetchTransport() {
+    // no cookies or referrer to third-party targets; core passes its own AbortSignal in init.signal
+    const fetchImpl = (url, init = {}) => fetch(url, { ...init, credentials: 'omit', referrerPolicy: 'no-referrer' });
+    return createFetchTransport({ fetchImpl });
+  }
+
+  const transportFor = (url) => (isMockUrl(url) ? mockTransport() : fetchTransport());
 
   function setRunning(on) {
     state.running = on;
@@ -185,13 +200,18 @@ function start(core) {
   $('stop').addEventListener('click', () => {
     if (state.controller) {
       state.controller.abort();
+      $('stop').disabled = true;
       $('progress-label').textContent = '중지하는 중…';
       announce('실행을 중지하는 중입니다.');
     }
   });
 
-  /** Run one suite through core. Returns the report, or null if the user stopped it. */
-  async function execute(config, warnings, label) {
+  /**
+   * Run one suite through core.
+   * Resolves { report, aborted }: on Stop, report is core's partial report (aborted: true, gate FAIL),
+   * or null if core attached none.
+   */
+  async function execute(config, warnings, label, { transport } = {}) {
     const controller = new AbortController();
     state.controller = controller;
     const plan = buildPlan(config);
@@ -208,9 +228,9 @@ function start(core) {
     const judgeUrl = config.judge.enabled && config.judge.target ? config.judge.target.url : null;
     try {
       const report = await runSuite(config, {
-        transport: transportFor(config.target.url, controller.signal),
-        judgeTransport: judgeUrl ? transportFor(judgeUrl, controller.signal) : undefined,
-        sleep: abortableSleep(controller.signal),
+        transport: transport || transportFor(config.target.url),
+        judgeTransport: judgeUrl ? transportFor(judgeUrl) : undefined,
+        signal: controller.signal,
         extraWarnings: warnings,
         onProgress: (ev) => {
           if (ev.type === 'trial-done') doneTrials += 1;
@@ -219,11 +239,15 @@ function start(core) {
           $('progress-text').textContent = `케이스 ${ev.caseIndex + 1}/${ev.caseCount} · ${ev.caseId}${v} · 시도 ${doneTrials}/${totalTrials}`;
         },
       });
-      if (controller.signal.aborted) {
-        announce('실행을 중지했습니다. 중지된 실행의 결과는 표시하지 않습니다.');
-        return null;
+      return { report, aborted: false };
+    } catch (e) {
+      if (e && (e.name === 'AbortError' || e.code === 'ABORTED')) {
+        const partial = e.report || null;
+        const done = partial ? partial.cases.length : 0;
+        announce(`실행을 중지했습니다. 완료된 케이스 ${done}/${plan.cases.length}개의 부분 결과를 표시합니다. 중단된 실행은 통과로 보지 않습니다.`);
+        return { report: partial, aborted: true };
       }
-      return report;
+      throw e;
     } finally {
       state.controller = null;
       setRunning(false);
@@ -249,13 +273,17 @@ function start(core) {
   // ---------------------------------------------------------------------------
   // demo mode
 
+  const EMPTY_MODEL = 'mock-empty-agent';
+
   function demoRaw(defend) {
     const mode = document.querySelector('input[name="demo-mode"]:checked').value;
     const repeats = Number($('demo-repeats').value);
+    // 'empty' reuses a mock:// URL (so no network and no authorization prompt) but is answered by emptyTransport()
+    const host = mode === 'empty' ? 'secure' : mode;
     const raw = {
       version: 2,
       authorized: true,
-      target: { provider: 'openai', url: `mock://${mode}/v1/chat/completions`, model: 'mock-agent' },
+      target: { provider: 'openai', url: `mock://${host}/v1/chat/completions`, model: mode === 'empty' ? EMPTY_MODEL : 'mock-agent' },
       attack: {
         transforms: checkedValues('demo-transforms'),
         multiturn: $('demo-multiturn').checked,
@@ -269,13 +297,15 @@ function start(core) {
     }
     return raw;
   }
+  const demoTransport = (raw) => (raw.target.model === EMPTY_MODEL ? emptyTransport() : undefined);
 
   function estimateText(config) {
     const plan = buildPlan(config);
     const er = plan.estimatedRequests;
     const judge = er.judgeMax ? ` · judge 최대 ${er.judgeMax}회 · 합계 최대 ${er.total}회` : '';
     const skipped = plan.skipped.length ? ` · 건너뛸 프로브 ${plan.skipped.length}개` : '';
-    return `케이스 ${plan.cases.length}개 · 대상 요청 최대 ${er.target}회${judge}${skipped}`;
+    const retries = config.network.retries > 0 ? ` (재시도 시 최대 ×${config.network.retries + 1})` : '';
+    return `케이스 ${plan.cases.length}개 · 대상 요청 최대 ${er.target}회${retries}${judge}${skipped}`;
   }
 
   function updateDemoEstimate() {
@@ -283,7 +313,7 @@ function start(core) {
     el.classList.remove('bad');
     try {
       const { config } = normalizeConfig(demoRaw(false), { env: {} });
-      el.textContent = '예상: ' + estimateText(config) + ' (네트워크 사용 안 함)';
+      el.textContent = '예상: ' + estimateText(config) + ' · 네트워크 사용 안 함';
     } catch (e) {
       reportError(e, el);
     }
@@ -299,15 +329,17 @@ function start(core) {
     let n;
     try { n = normalizeConfig(raw, { env: {} }); } catch (err) { reportError(err, $('demo-estimate')); return; }
     try {
-      const report = await execute(n.config, n.warnings, '공격 실행 (방어 OFF)');
+      const { report, aborted } = await execute(n.config, n.warnings, '공격 실행 (방어 OFF)', { transport: demoTransport(raw) });
       if (!report) return;
-      state.demoRaw = raw;
+      // an aborted run is shown (as 중단됨 · FAIL) but is never a baseline for the defend comparison
+      state.demoRaw = aborted ? null : raw;
       state.reports = { before: report };
       state.comparison = null;
+      state.compareNote = null;
       state.current = 'before';
       renderResults();
-      $('demo-defend').disabled = false;
-      announce(`공격 실행 완료 — 게이트 ${report.gate.status}: ${report.gate.summaryText}`);
+      $('demo-defend').disabled = aborted;
+      if (!aborted) announce(`공격 실행 완료 — 게이트 ${report.gate.status}: ${report.gate.summaryText}`);
     } catch (err) {
       reportError(err, $('demo-estimate'));
     }
@@ -319,15 +351,20 @@ function start(core) {
     let n;
     try { n = normalizeConfig(raw, { env: {} }); } catch (err) { reportError(err, $('demo-estimate')); return; }
     try {
-      const after = await execute(n.config, n.warnings, '방어 적용 후 재시험 (방어 ON)');
+      const { report: after, aborted } = await execute(n.config, n.warnings, '방어 적용 후 재시험 (방어 ON)', { transport: demoTransport(raw) });
       if (!after) return;
       const before = state.reports.before;
       state.reports = { before, after };
-      state.comparison = compareReports(before, after);
+      // never compare against a partial run: its missing cases would look "fixed"
+      state.comparison = aborted ? null : compareReports(before, after);
+      state.compareNote = aborted ? '방어 후 재시험이 중단되어 전후 비교를 하지 않았습니다. 다시 실행하십시오.' : null;
       state.current = 'after';
       renderResults();
-      const br = state.comparison.blockRate;
-      announce(`재시험 완료 — 게이트 ${after.gate.status}. 차단률 ${br === null ? '계산 불가' : pct(br)}.`);
+      if (!aborted) {
+        const c = state.comparison;
+        const br = c.blockRate;
+        announce(`재시험 완료 — 게이트 ${after.gate.status}. 차단률 ${br === null ? '계산 불가' : pct(br)}${c.trustworthy === false ? ', 신뢰할 수 없음' : ''}.`);
+      }
     } catch (err) {
       reportError(err, $('demo-estimate'));
     }
@@ -548,13 +585,14 @@ function start(core) {
       return;
     }
     try {
-      const report = await execute(result.config, result.warnings, '실제 대상 점검');
+      const { report, aborted } = await execute(result.config, result.warnings, '실제 대상 점검');
       if (!report) return;
       state.reports = { live: report };
       state.comparison = null;
+      state.compareNote = null;
       state.current = 'live';
       renderResults();
-      announce(`점검 완료 — 게이트 ${report.gate.status}: ${report.gate.summaryText}`);
+      if (!aborted) announce(`점검 완료 — 게이트 ${report.gate.status}: ${report.gate.summaryText}`);
     } catch (err) {
       reportError(err, $('live-estimate'));
     }
@@ -564,6 +602,8 @@ function start(core) {
   // results rendering (reads only report fields listed in spec 9.5 + plain metadata)
 
   const REPORT_TITLES = { before: '방어 전 (defend OFF)', after: '방어 후 (defend ON)', live: '점검 결과' };
+  // ABORTED is not repeated here: it is already the banner and the first gate reason
+  const GATE_WARNINGS = new Set(['MOSTLY_INCONCLUSIVE', 'JUDGE_FAILURES']);
 
   function renderResults() {
     $('results').hidden = false;
@@ -593,8 +633,15 @@ function start(core) {
   function renderCompare() {
     const cmp = state.comparison;
     const box = $('compare');
-    if (!cmp) { box.replaceChildren(); return; }
+    if (!cmp) {
+      box.replaceChildren(state.compareNote ? h('p', { class: 'callout callout-warn', role: 'note' }, state.compareNote) : '');
+      return;
+    }
     const br = cmp.blockRate;
+    const untrusted = cmp.trustworthy === false;
+    const unc = Array.isArray(cmp.uncomparable) ? cmp.uncomparable : [];
+    const afterErr = cmp.after && typeof cmp.after.errorCases === 'number' ? cmp.after.errorCases : 0;
+    const brText = br === null ? '차단률 —' : `차단률 ${pct(br)}`;
     const rows = Object.entries(cmp.byCategory).map(([cat, c]) => h('tr', {},
       h('td', { class: 'nowrap' }, cat),
       h('td', {}, c.title || (CATEGORY_INFO[cat] && CATEGORY_INFO[cat].title) || ''),
@@ -603,6 +650,7 @@ function start(core) {
       h('td', { class: 'num' }, wilsonText(c.before.asr)),
       h('td', { class: 'num' }, wilsonText(c.after.asr)),
       h('td', { class: 'num' }, c.blockRate === null ? '—' : pct(c.blockRate)),
+      h('td', { class: 'num' }, typeof c.uncomparable === 'number' ? c.uncomparable : '—'),
       h('td', {}, c.ciOverlap ? '차이를 단정할 수 없음 (95% 구간 겹침)' : ''),
     ));
     const idList = (title, ids) => h('details', {},
@@ -611,18 +659,29 @@ function start(core) {
     box.replaceChildren(h('section', { class: 'compare', 'aria-labelledby': 'cmp-title' },
       h('h3', { id: 'cmp-title' }, '폐루프 비교 — 방어 OFF → ON'),
       h('p', {},
-        h('span', { class: 'big' }, br === null ? '차단률 —' : `차단률 ${pct(br)}`), ' ',
-        br === null ? '(방어 전 취약 케이스가 없어 계산할 수 없습니다)' : `· 취약 케이스 ${cmp.before.vulnerableCases}/${cmp.before.cases} → ${cmp.after.vulnerableCases}/${cmp.after.cases}`),
+        h('span', { class: 'big' }, brText),
+        untrusted ? h('span', { class: 'verdict v-VULNERABLE trust-badge' }, '신뢰할 수 없음') : null, ' ',
+        br === null
+          ? '(비교 가능한 케이스 중 방어 전 취약 케이스가 없어 계산할 수 없습니다)'
+          : `· 취약 케이스 ${cmp.before.vulnerableCases}/${cmp.before.cases} → ${cmp.after.vulnerableCases}/${cmp.after.cases}`),
+      h('p', { class: 'muted' }, `비교 가능 케이스 ${typeof cmp.comparableCases === 'number' ? cmp.comparableCases : '—'}건 · 비교 불가 ${unc.length}건 (전/후 한쪽이 오류) · 방어 후 오류 ${afterErr}건`),
+      untrusted ? h('div', { class: 'callout callout-error', role: 'note' },
+        h('p', {}, h('strong', {}, '이 차단률은 신뢰할 수 없습니다.'),
+          unc.length ? ` 전/후 중 한쪽이 오류인 케이스 ${unc.length}건은 측정되지 않아 계산에서 빠졌습니다.` : '',
+          afterErr ? ` 방어 후 리포트에 오류 케이스 ${afterErr}건이 있습니다.` : '',
+          ' 오류 원인을 고친 뒤 다시 비교하십시오.'),
+        unc.length ? h('p', { class: 'idlist' }, unc.join(', ')) : null) : null,
       h('div', { class: 'table-wrap', tabindex: '0', role: 'region', 'aria-label': '카테고리별 전후 비교 표' },
         h('table', {},
           h('thead', {}, h('tr', {},
             h('th', { scope: 'col' }, 'OWASP'), h('th', { scope: 'col' }, '항목'),
             h('th', { scope: 'col', class: 'num' }, '전 취약/케이스'), h('th', { scope: 'col', class: 'num' }, '후 취약/케이스'),
             h('th', { scope: 'col', class: 'num' }, '전 ASR (95% CI)'), h('th', { scope: 'col', class: 'num' }, '후 ASR (95% CI)'),
-            h('th', { scope: 'col', class: 'num' }, '차단률'), h('th', { scope: 'col' }, '비고'))),
+            h('th', { scope: 'col', class: 'num' }, '차단률'), h('th', { scope: 'col', class: 'num' }, '비교 불가'), h('th', { scope: 'col' }, '비고'))),
           h('tbody', {}, rows))),
       idList('고쳐진 케이스', cmp.fixed),
       idList('새로 뚫린 케이스', cmp.regressed),
+      Array.isArray(cmp.becameInconclusive) && cmp.becameInconclusive.length ? idList('취약 → 미결로 바뀐 케이스 (차단률에는 들어가지만 차단이 확인된 것은 아님)', cmp.becameInconclusive) : null,
       cmp.warnings && cmp.warnings.length ? h('ul', { class: 'plain' }, cmp.warnings.map((w) => h('li', {}, `[${w.code}] ${w.message}`))) : null,
       h('div', { class: 'downloads' },
         h('button', { type: 'button', class: 'btn btn-small', onclick: () => download(`agent-redteam-compare-${stamp(cmp.after.finishedAt)}.md`, renderCompareMarkdown(cmp), 'text/markdown') }, '비교 리포트 Markdown 내려받기')),
@@ -639,17 +698,29 @@ function start(core) {
     const j = r.settings.judge;
     const frag = document.createDocumentFragment();
 
-    frag.append(h('h3', {}, REPORT_TITLES[key] || '점검 결과'));
+    frag.append(h('h3', {}, (REPORT_TITLES[key] || '점검 결과') + (r.aborted === true ? ' — 중단됨 (부분 결과)' : '')));
+
+    // aborted run: core already forces the gate to FAIL; the UI never shows such a run as PASS either way
+    const aborted = r.aborted === true;
+    if (aborted) {
+      frag.append(h('div', { class: 'callout callout-error aborted-banner', role: 'note' },
+        h('p', {}, h('strong', {}, `중단된 실행 — 부분 결과 (완료 ${r.cases.length}/${r.plan.cases} 케이스)`)),
+        h('p', {}, '사용자가 실행을 중지했습니다. 중단 시점의 케이스는 버렸고, 측정하지 않은 케이스가 있으므로 이 결과는 통과로 보지 않습니다. 다시 실행하십시오.')));
+    }
 
     // gate
-    const pass = r.gate.status === 'PASS';
+    const pass = r.gate.status === 'PASS' && !aborted;
+    const badge = aborted ? '중단됨 · FAIL' : (pass ? 'PASS' : 'FAIL');
     frag.append(h('section', { class: `gate ${pass ? 'gate-pass' : 'gate-fail'}`, 'aria-label': '배포 게이트' },
-      h('p', { class: 'gate-title' }, h('span', {}, '배포 게이트'), h('span', { class: 'gate-badge' }, r.gate.status)),
+      h('p', { class: 'gate-title' }, h('span', {}, '배포 게이트'), h('span', { class: 'gate-badge' }, badge)),
       h('p', {}, r.gate.summaryText),
       // summaryText already is reasons[0] (+ "외 n건"); list the reasons only when there is more to say
       r.gate.reasons.length > 1 || (r.gate.reasons.length === 1 && r.gate.reasons[0] !== r.gate.summaryText)
         ? h('ul', {}, r.gate.reasons.map((x) => h('li', {}, x))) : null,
-      h('p', { class: 'muted' }, `임계값: 취약 허용 ${r.gate.thresholds.maxVulnerable}건 · 오류 허용 ${r.gate.thresholds.maxErrors}건 · 미결 시 FAIL ${r.gate.thresholds.failOnInconclusive ? '예' : '아니오'}`)));
+      h('p', { class: 'muted' }, `임계값: 취약 허용 ${r.gate.thresholds.maxVulnerable}건 · 오류 허용 ${r.gate.thresholds.maxErrors}건 · 미결 시 FAIL ${r.gate.thresholds.failOnInconclusive ? '예' : '아니오'}`),
+      // warnings that change how the gate should be read are repeated right here
+      r.warnings.filter((w) => GATE_WARNINGS.has(w.code)).map((w) =>
+        h('p', { class: 'callout callout-warn gate-warning' }, h('code', {}, w.code), ` ${w.message}`))));
 
     // counts
     frag.append(h('ul', { class: 'stats', 'aria-label': '요약 수치' },
@@ -760,7 +831,7 @@ function start(core) {
         h('td', {}, verdictBadge(c.verdict)),
         h('td', { class: 'nowrap' }, SOURCE_LABELS[c.source] || c.source),
         h('td', { class: 'reason' }, c.reason),
-        h('td', { class: 'evidence' }, c.evidence ? clip(c.evidence, 160) : '—'))));
+        h('td', { class: 'evidence' }, c.evidence ? clip(evidenceContext(c) || c.evidence, 160) : '—'))));
       countEl.textContent = `${list.length}건 표시`;
     };
     select.addEventListener('change', fill);
@@ -804,6 +875,7 @@ function start(core) {
         h('dt', {}, '판정'), h('dd', {}, verdictBadge(c.verdict), ` 근거: ${SOURCE_LABELS[c.source] || c.source}`),
         h('dt', {}, '사유'), h('dd', {}, c.reason),
         h('dt', {}, '증거'), h('dd', {}, c.evidence || '—'),
+        evidenceContext(c) ? [h('dt', {}, '증거 주변 응답'), h('dd', {}, evidenceContext(c))] : null,
         h('dt', {}, 'OWASP'), h('dd', {}, `${c.category} ${(CATEGORY_INFO[c.category] || {}).title || ''}`),
         h('dt', {}, '프로브'), h('dd', {}, `${c.probeId} · ${c.kind === 'crescendo' ? '멀티턴(크레센도)' : '단일 턴'} · 변형 ${c.transformLabel}`),
         h('dt', {}, '시도'), h('dd', {}, `${c.trials.length}회 · 취약 ${c.vulnerableTrials} · 오류 ${c.errorTrials}`))),

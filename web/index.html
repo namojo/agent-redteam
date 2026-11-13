@@ -46,7 +46,9 @@
           <div class="choice-row">
             <label class="choice"><input type="radio" name="demo-mode" value="vulnerable" checked> 취약한 에이전트 <span class="muted">(mock://vulnerable)</span></label>
             <label class="choice"><input type="radio" name="demo-mode" value="secure"> 방어된 에이전트 <span class="muted">(mock://secure)</span></label>
+            <label class="choice"><input type="radio" name="demo-mode" value="empty" aria-describedby="demo-empty-hint"> 빈 응답 에이전트 <span class="muted">(모든 요청에 빈 답)</span></label>
           </div>
+          <p class="hint" id="demo-empty-hint">빈 응답 에이전트는 브라우저 안의 가짜 대상으로, 무엇을 물어도 빈 content를 돌려줍니다. 아무 말도 하지 않는 대상은 “안전”이 아니라 미결이며 게이트는 FAIL입니다.</p>
         </fieldset>
         <fieldset>
           <legend>공격 변형</legend>
