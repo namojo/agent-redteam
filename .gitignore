@@ -3,3 +3,10 @@ node_modules/
 report.md
 report.json
 .DS_Store
+
+# local hygiene denylist (company/internal names)
+.hygiene-denylist.txt
+# harness intermediate artifacts
+_workspace*/
+# site build output
+_site/
