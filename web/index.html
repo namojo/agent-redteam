@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <title>웹 콘솔 · agent-redteam</title>
+  <link rel="stylesheet" href="console.css">
+  <script type="module" src="console.mjs"></script>
+</head>
+<body>
+  <a class="skip" href="#main">본문으로 건너뛰기</a>
+  <header class="site-header">
+    <div class="bar">
+      <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>agent-redteam</a>
+      <nav aria-label="사이트">
+        <ul>
+          <li><a href="../index.html">문서 사이트</a></li>
+          <li><a href="../manual.html">매뉴얼</a></li>
+          <li><a href="./" aria-current="page">웹 콘솔</a></li>
+          <li><a href="https://github.com/namojo/agent-redteam" rel="noopener">GitHub</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="console">
+    <h1>웹 콘솔</h1>
+    <p class="lede">CLI와 같은 엔진(<code>src/core</code>)을 브라우저에서 그대로 실행합니다. 판정·게이트·리포트는 모두 엔진이 만들고, 이 화면은 결과를 보여 주기만 합니다.</p>
+
+    <noscript><p class="callout callout-error">이 콘솔은 JavaScript(ES 모듈)가 필요합니다.</p></noscript>
+    <p id="boot-error" class="callout callout-error" hidden></p>
+
+    <div class="tabs" role="tablist" aria-label="실행 모드">
+      <button type="button" role="tab" id="tab-demo" aria-controls="panel-demo" aria-selected="true">데모 모드</button>
+      <button type="button" role="tab" id="tab-live" aria-controls="panel-live" aria-selected="false" tabindex="-1">실제 연결 모드</button>
+    </div>
+
+    <!-- ===================== demo ===================== -->
+    <section id="panel-demo" class="panel" role="tabpanel" aria-labelledby="tab-demo">
+      <p>브라우저 안의 mock 에이전트를 상대로 점검합니다. 네트워크 요청은 보내지 않습니다. 취약한 에이전트에 공격을 실행한 뒤, 방어 가드 프롬프트를 켜고 다시 시험해 차단률을 비교할 수 있습니다.</p>
+      <form id="demo-form" novalidate>
+        <fieldset>
+          <legend>mock 에이전트</legend>
+          <div class="choice-row">
+            <label class="choice"><input type="radio" name="demo-mode" value="vulnerable" checked> 취약한 에이전트 <span class="muted">(mock://vulnerable)</span></label>
+            <label class="choice"><input type="radio" name="demo-mode" value="secure"> 방어된 에이전트 <span class="muted">(mock://secure)</span></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>공격 변형</legend>
+          <p class="hint" id="demo-transforms-hint">기본(변형 없음)은 항상 포함됩니다. 고른 변형마다 단일 턴 프로브가 한 벌씩 추가됩니다.</p>
+          <div class="choice-row" id="demo-transforms" data-transforms aria-describedby="demo-transforms-hint"></div>
+        </fieldset>
+        <fieldset>
+          <legend>구성</legend>
+          <div class="grid">
+            <label class="choice"><input type="checkbox" id="demo-multiturn" checked> 멀티턴(크레센도) 포함</label>
+            <label class="choice"><input type="checkbox" id="demo-judge"> mock LLM judge로 보정 지표 계산 <span class="muted">(mode all)</span></label>
+            <div class="field">
+              <label for="demo-repeats">반복 수 (케이스당 시도)</label>
+              <input type="number" id="demo-repeats" min="1" max="20" step="1" value="1" inputmode="numeric">
+            </div>
+          </div>
+        </fieldset>
+        <p class="estimate" id="demo-estimate"></p>
+        <div class="actions">
+          <button type="submit" class="btn btn-primary" id="demo-run">공격 실행</button>
+          <button type="button" class="btn" id="demo-defend" disabled aria-describedby="demo-defend-hint">방어 적용 후 재시험</button>
+        </div>
+        <p class="hint" id="demo-defend-hint">“방어 적용 후 재시험”은 직전 “공격 실행”과 같은 설정에 방어(<code>attack.defend</code>)만 켜서 다시 실행하고 전후 차단률을 비교합니다. 공격을 한 번 실행하면 활성화됩니다.</p>
+      </form>
+    </section>
+
+    <!-- ===================== live ===================== -->
+    <section id="panel-live" class="panel" role="tabpanel" aria-labelledby="tab-live" hidden>
+      <div class="callout callout-warn" id="live-notice">
+        <p><strong>브라우저에서 대상 API를 직접 호출합니다.</strong></p>
+        <ul>
+          <li>대상이 CORS를 허용해야 합니다(<code>Access-Control-Allow-Origin</code>). 허용하지 않으면 모든 케이스가 오류로 끝나고 게이트는 FAIL입니다.</li>
+          <li>사내·내부망 엔드포인트, 사설 CA·TLS 설정이 필요한 대상은 CLI(<code>npx agent-redteam run</code>)를 쓰십시오. 웹에서는 TLS·CA를 설정할 수 없습니다.</li>
+          <li>Anthropic API를 브라우저에서 부르려면 헤더 <code>anthropic-dangerous-direct-browser-access: true</code>가 필요합니다.</li>
+          <li>API 키는 이 탭의 메모리에만 있습니다. 저장하지 않으며 새로고침하면 사라집니다. 리포트에는 키·헤더 값이 기록되지 않습니다.</li>
+        </ul>
+      </div>
+
+      <form id="live-form" novalidate autocomplete="off">
+        <div id="live-errors" class="callout callout-error" tabindex="-1" hidden></div>
+
+        <fieldset>
+          <legend>대상</legend>
+          <div class="grid">
+            <div class="field">
+              <label for="f-provider">형식(provider)</label>
+              <select id="f-provider" data-path="target.provider">
+                <option value="openai">OpenAI 호환 (chat/completions)</option>
+                <option value="anthropic">Anthropic (messages)</option>
+                <option value="http">HTTP 템플릿</option>
+              </select>
+            </div>
+            <div class="field span-2">
+              <label for="f-url">엔드포인트 URL (전체 경로)</label>
+              <input type="url" id="f-url" data-path="target.url" placeholder="https://api.example.com/v1/chat/completions" spellcheck="false">
+            </div>
+            <div class="field" data-show="openai anthropic">
+              <label for="f-model">모델</label>
+              <input type="text" id="f-model" data-path="target.model" placeholder="gpt-4o-mini" spellcheck="false">
+            </div>
+            <div class="field">
+              <label for="f-key">API 키 <span class="muted">(메모리에만 보관)</span></label>
+              <input type="password" id="f-key" data-path="target.apiKey" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="field" data-show="openai">
+              <label for="f-system-role">시스템 지시 전달 방식</label>
+              <select id="f-system-role" data-path="target.systemRole">
+                <option value="system">system 역할</option>
+                <option value="developer">developer 역할</option>
+                <option value="user-prefix">첫 user 메시지 앞에 붙이기</option>
+              </select>
+            </div>
+            <div class="field span-2">
+              <label for="f-headers">추가 헤더 (JSON 객체)</label>
+              <textarea id="f-headers" data-path="target.headers" rows="2" spellcheck="false" placeholder='{"x-tenant": "demo"}' aria-describedby="f-headers-hint"></textarea>
+              <p class="hint" id="f-headers-hint">값의 <code>{{KEY}}</code>는 API 키로 바뀝니다. 키를 쓰지 않는 사용자 정의 인증 헤더도 여기 넣습니다.</p>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset data-show="http">
+          <legend>HTTP 템플릿</legend>
+          <div class="grid">
+            <div class="field">
+              <label for="f-method">메서드</label>
+              <select id="f-method" data-path="target.method">
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="GET">GET</option>
+              </select>
+            </div>
+            <div class="field span-2">
+              <label for="f-body">본문 템플릿</label>
+              <textarea id="f-body" data-path="target.body" rows="3" spellcheck="false" aria-describedby="f-body-hint">{"system":"{{SYSTEM}}","messages":[{{MESSAGES}}]}</textarea>
+              <p class="hint" id="f-body-hint"><code>{{PROMPT}}</code> 마지막 사용자 입력, <code>{{MESSAGES}}</code> 대화 메시지 목록, <code>{{SYSTEM}}</code> 시스템 지시, <code>{{KEY}}</code> API 키. <code>{{MESSAGES}}</code>가 없으면 멀티턴을, <code>{{SYSTEM}}</code>이 없으면 방어 가드를 보낼 수 없습니다.</p>
+            </div>
+            <div class="field">
+              <label for="f-response-path">응답 텍스트 경로</label>
+              <input type="text" id="f-response-path" data-path="target.responsePath" placeholder="choices.0.message.content" spellcheck="false">
+            </div>
+            <div class="field">
+              <label for="f-toolcalls-path">도구 호출 배열 경로 <span class="muted">(선택)</span></label>
+              <input type="text" id="f-toolcalls-path" data-path="target.toolCallsPath" spellcheck="false">
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>시스템 프롬프트와 카나리</legend>
+          <div class="grid">
+            <div class="field span-2">
+              <label for="f-system-prompt">시스템 프롬프트 <span class="muted">(원시 LLM을 시험할 때. 에이전트가 자체 지침을 가지면 비워 두십시오)</span></label>
+              <textarea id="f-system-prompt" data-path="target.systemPrompt" rows="3"></textarea>
+            </div>
+            <div class="field">
+              <label for="f-canary">카나리 문자열 <span class="muted">(6자 이상)</span></label>
+              <input type="text" id="f-canary" data-path="oracles.canary" spellcheck="false" aria-describedby="f-canary-hint">
+              <p class="hint" id="f-canary-hint">시스템 프롬프트에 심어 둔 고유 문자열. 응답에 나오면 시스템 프롬프트 유출(LLM07)로 판정합니다. 없으면 LLM07은 judge 없이 미결입니다.</p>
+            </div>
+            <div class="field">
+              <button type="button" class="btn btn-small" id="f-canary-insert">카나리를 시스템 프롬프트에 넣기</button>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>공격 구성</legend>
+          <div class="sub">
+            <p class="sub-title" id="f-categories-label">OWASP 카테고리</p>
+            <div class="choice-row" id="f-categories" role="group" aria-labelledby="f-categories-label" data-path="attack.categories"></div>
+          </div>
+          <div class="sub">
+            <p class="sub-title" id="f-transforms-label">공격 변형 <span class="muted">(기본은 항상 포함)</span></p>
+            <div class="choice-row" id="f-transforms" role="group" aria-labelledby="f-transforms-label" data-transforms data-path="attack.transforms"></div>
+          </div>
+          <div class="grid">
+            <label class="choice"><input type="checkbox" id="f-multiturn" data-path="attack.multiturn" checked> 멀티턴(크레센도) 포함</label>
+            <label class="choice"><input type="checkbox" id="f-defend" data-path="attack.defend"> 방어 가드 프롬프트 덧붙이기(defend)</label>
+            <div class="field">
+              <label for="f-repeats">반복 수 (1–100)</label>
+              <input type="number" id="f-repeats" data-path="attack.repeats" min="1" max="100" step="1" value="1" inputmode="numeric">
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>LLM judge <span class="muted">(오라클이 결정하지 못한 미결 케이스 보조 판정)</span></legend>
+          <div class="grid">
+            <label class="choice"><input type="checkbox" id="f-judge" data-path="judge.enabled"> judge 사용</label>
+            <div class="field">
+              <label for="f-judge-mode">모드</label>
+              <select id="f-judge-mode" data-path="judge.mode">
+                <option value="fallback">fallback — 미결만 judge</option>
+                <option value="all">all — 모든 시도 judge(보정 지표)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="f-judge-provider">judge 형식</label>
+              <select id="f-judge-provider" data-path="judge.target.provider">
+                <option value="">대상과 같음</option>
+                <option value="openai">OpenAI 호환</option>
+                <option value="anthropic">Anthropic</option>
+              </select>
+            </div>
+            <div class="field span-2">
+              <label for="f-judge-url">judge 엔드포인트 URL <span class="muted">(비우면 대상 자신 — 권장하지 않음)</span></label>
+              <input type="url" id="f-judge-url" data-path="judge.target.url" spellcheck="false">
+            </div>
+            <div class="field">
+              <label for="f-judge-model">judge 모델</label>
+              <input type="text" id="f-judge-model" data-path="judge.target.model" spellcheck="false">
+            </div>
+            <div class="field">
+              <label for="f-judge-key">judge API 키 <span class="muted">(메모리에만)</span></label>
+              <input type="password" id="f-judge-key" data-path="judge.target.apiKey" autocomplete="off" spellcheck="false" aria-describedby="f-judge-key-hint">
+              <p class="hint" id="f-judge-key-hint">judge URL이 대상과 다르면 대상의 키·헤더는 넘어가지 않습니다.</p>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>배포 게이트</legend>
+          <div class="grid">
+            <div class="field">
+              <label for="f-max-vuln">취약 케이스 허용 수</label>
+              <input type="number" id="f-max-vuln" data-path="gate.maxVulnerable" min="0" step="1" value="0" inputmode="numeric">
+            </div>
+            <div class="field">
+              <label for="f-max-err">오류 케이스 허용 수</label>
+              <input type="number" id="f-max-err" data-path="gate.maxErrors" min="0" step="1" value="0" inputmode="numeric">
+            </div>
+            <label class="choice"><input type="checkbox" id="f-fail-inconclusive" data-path="gate.failOnInconclusive"> 미결이 1건이라도 있으면 FAIL</label>
+          </div>
+        </fieldset>
+
+        <details class="advanced">
+          <summary>고급 설정 (네트워크·추가 본문)</summary>
+          <div class="grid">
+            <div class="field">
+              <label for="f-timeout">요청 타임아웃 (ms)</label>
+              <input type="number" id="f-timeout" data-path="network.timeoutMs" min="1000" step="1000" value="60000" inputmode="numeric">
+            </div>
+            <div class="field">
+              <label for="f-retries">재시도 횟수 (0–10)</label>
+              <input type="number" id="f-retries" data-path="network.retries" min="0" max="10" step="1" value="2" inputmode="numeric">
+            </div>
+            <div class="field">
+              <label for="f-rpm">분당 요청 상한 (0 = 무제한)</label>
+              <input type="number" id="f-rpm" data-path="network.rpm" min="0" step="1" value="0" inputmode="numeric">
+            </div>
+            <div class="field span-2" data-show="openai anthropic">
+              <label for="f-extra-body">추가 본문 필드 extraBody (JSON 객체)</label>
+              <textarea id="f-extra-body" data-path="target.extraBody" rows="2" spellcheck="false" placeholder='{"chat_template_kwargs": {"enable_thinking": false}}'></textarea>
+            </div>
+          </div>
+        </details>
+
+        <div class="authorize">
+          <label class="choice"><input type="checkbox" id="f-authorized"> 소유하거나 테스트 권한이 있는 대상입니다.</label>
+          <p class="hint">권한 없는 시스템에 공격 프롬프트를 보내는 것은 법적 문제가 될 수 있습니다. 체크해야 실행할 수 있습니다.</p>
+        </div>
+
+        <p class="estimate" id="live-estimate"></p>
+        <div class="actions">
+          <button type="submit" class="btn btn-primary" id="live-run" disabled>실행</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ===================== progress ===================== -->
+    <section id="progress" class="progress-box" hidden aria-label="진행 상황">
+      <div class="progress-head">
+        <label for="progress-bar" id="progress-label">실행 중</label>
+        <button type="button" class="btn btn-danger btn-small" id="stop">중지</button>
+      </div>
+      <progress id="progress-bar" max="1" value="0"></progress>
+      <p class="progress-text" id="progress-text"></p>
+    </section>
+
+    <div id="status" class="sr-status" role="status" aria-live="polite" aria-atomic="true"></div>
+
+    <!-- ===================== results ===================== -->
+    <section id="results" hidden aria-labelledby="results-title">
+      <h2 id="results-title" tabindex="-1">결과</h2>
+      <div id="compare"></div>
+      <div id="report-switch"></div>
+      <div id="report"></div>
+    </section>
+  </main>
+
+  <dialog id="case-dialog" aria-labelledby="case-dialog-title">
+    <div class="dialog-head">
+      <h2 id="case-dialog-title"></h2>
+      <button type="button" class="btn btn-small" id="case-dialog-close">닫기</button>
+    </div>
+    <div id="case-dialog-body"></div>
+  </dialog>
+
+  <footer class="site-footer">
+    <p>엔진 <span id="engine-version"></span> · 판정은 휴리스틱 오라클과 선택적 LLM judge에 기반하며 오탐·미탐이 있을 수 있습니다 · MIT License</p>
+  </footer>
+</body>
+</html>
