@@ -8,18 +8,33 @@ description: agent-redteam 웹 콘솔(web/)과 GitHub Pages 사이트(site/ 빌�
 ## 1. 산출물 구조
 
 ```
-web/                 웹 콘솔 (정적 HTML + ES 모듈, 빌드 없음)
+web/                 웹 콘솔 (ES 모듈, 번들 없음. 스타일은 빌드된 ../assets/system.css를 쓰므로 빌드된 사이트로 본다)
   index.html
   console.mjs        src/core/를 상대 경로로 import
+  console.css
 site/
-  build.mjs          docs/*.md, README → _site/*.html, web/·src/core/ 복사, Mermaid 자산 복사
-  template.html      공통 레이아웃(내비게이션: 소개·빠른 시작·매뉴얼·예시 리포트·웹 콘솔·GitHub)
-  style.css
+  build.mjs          랜딩 + docs/*.md·README → _site/*.html, web/·src/core/ 복사, Mermaid·글꼴 자산 복사
+  demo.mjs           빌드 때 엔진을 mock으로 실행해 _site/data/demo.json 생성 (랜딩 숫자의 원본)
+  landing.html       랜딩 템플릿 (카피는 content/landing.json)
+  content/landing.json  랜딩 카피 (docs-writer 소유)
+  template.html      문서 페이지 레이아웃 (사이드 목차)
+  styles/            tokens.css(디자인 토큰 단일 원본) · base.css · landing.css · docs.css → assets/system.css
+  client/            랜딩·문서용 소형 스크립트
 _site/               빌드 결과 (gitignore)
 .github/workflows/pages.yml
 ```
 
-사이트 URL 구조: `/` 소개(README 기반), `/manual.html`, `/architecture.html`, `/offline-install.html`, `/example-report.html`, `/console/` 웹 콘솔. 실제 파일명은 build.mjs의 매핑 표 하나에서 관리한다.
+사이트 URL 구조: `/` 랜딩, `/readme.html` 개요(README), `/manual.html`, `/architecture.html`, `/offline-install.html`, `/example-report.html`, `/console/` 웹 콘솔. 실제 파일명은 build.mjs의 매핑 표 하나에서 관리한다. 디자인 결정의 배경은 루트 `DESIGN.md`.
+
+## 1-1. 디자인 시스템 (사이트·콘솔 공통)
+
+사이트는 "문서를 HTML로 바꾼 것"이 아니라 **해커톤 심사위원·보안 담당자가 3분 안에 문제→해법→증거를 이해하는 제품 페이지**다.
+- 랜딩(`index.html`)은 README 렌더가 아니라 `site/landing.html` 전용 템플릿이다. 카피 원본은 `site/content/landing.json`(docs-writer 소유) 하나에서 읽는다. 레이아웃은 web-developer, 문장은 docs-writer.
+- 숫자(케이스 수, 취약·차단 건수, 차단률, 프로브 목록)는 **빌드 때 엔진을 mock 대상으로 실제 실행해** `_site/data/demo.json`을 만들어 채운다. 손으로 쓴 숫자는 코드와 어긋난다.
+- 색은 의미를 가진다: 공격·취약·FAIL = signal red, 차단·PASS = green, 미결 = amber, 중립 = ink/slate. 장식용 색을 늘리지 않는다. 토큰은 `:root` CSS 변수 하나에서 관리하고 콘솔도 같은 토큰을 쓴다.
+- 글꼴은 자체 호스팅(CDN 금지 — 사내망·폐쇄망에서도 같게 보이도록). 한글 본문은 Pretendard 계열, 코드는 고정폭. woff2만, 필요한 굵기만.
+- 라이트/다크 모두 대비 WCAG AA, 375px에서 가로 스크롤 없음, `prefers-reduced-motion`이면 애니메이션 끔.
+- 문서 페이지는 같은 시스템을 쓴다: 데스크톱에서 왼쪽(또는 오른쪽) 고정 목차, 읽기 폭 70ch 안팎, 표는 자체 스크롤, 콜아웃 스타일.
 
 ## 2. 빌드 원칙
 

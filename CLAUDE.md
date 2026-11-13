@@ -13,3 +13,4 @@
 |------|----------|------|------|
 | 2026-11-13 | 초기 구성 (architect·engine·web·docs·qa 5개 에이전트, 오케스트레이터 + 4개 스킬, 위생 검사 스크립트) | 전체 | 사내망에서 미완성된 저장소를 처음부터 재검토·재구축 |
 | 2026-11-13 | 사이트 빌드 의존성을 `site/package.json`으로 분리, 사이트 인프라를 엔진 구현과 병렬로 시작 | skills/redteam-site, redteam-rebuild, redteam-qa | 루트 package.json 충돌 방지, 대기 시간 단축 |
+| 2026-11-13 | 디자인 시스템 규칙 추가: 전용 랜딩(`site/landing.html` + docs-writer 소유 `site/content/landing.json`), 빌드 시 mock 실행으로 숫자 생성, 자체 호스팅 글꼴, 의미 있는 색 토큰 | skills/redteam-site | "웹페이지가 너무 일반적" 피드백 — 해커톤 스토리가 보이는 제품 페이지 필요 |
