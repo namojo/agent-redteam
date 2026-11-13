@@ -1,53 +1,40 @@
 #!/usr/bin/env node
 /**
- * run-demo — mock-agent 를 띄우고 agent-redteam 스위트를 돌려 보는 엔드투엔드 데모/테스트.
- *   node examples/run-demo.mjs
- * 취약 모드(게이트 FAIL)와 방어 모드(게이트 PASS)를 모두 확인한다.
+ * End-to-end demo against a local HTTP mock agent (no external network):
+ * run without defence (expect FAIL) → run with the guard prompt (expect PASS) → closed-loop block rate.
+ * Exit 0 when "before" FAILs and "after" PASSes, otherwise 1.
  */
-import { spawn } from 'node:child_process';
-import { runSuite } from '../src/engine.mjs';
-import { renderConsole } from '../src/report.mjs';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { normalizeConfig, applyOverrides, runSuite, compareReports } from '../src/core/index.mjs';
+import { startMockServer } from '../src/node/mock-server.mjs';
+import { createNodeTransport } from '../src/node/transport.mjs';
+import { renderConsole, renderCompareConsole } from '../src/node/console-render.mjs';
 
-function startMock(secure, port) {
-  const args = ['examples/mock-agent.mjs', '--port', String(port)];
-  if (secure) args.push('--secure');
-  const p = spawn(process.execPath, args, { stdio: 'ignore' });
-  return p;
+const configPath = fileURLToPath(new URL('./mock.config.json', import.meta.url));
+const server = await startMockServer({ mode: 'vulnerable' });
+let code = 1;
+try {
+  const raw = applyOverrides(JSON.parse(readFileSync(configPath, 'utf8')), { 'target.url': server.url });
+  const transport = createNodeTransport();
+  const color = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
+
+  const before = normalizeConfig(raw, { env: process.env });
+  const r1 = await runSuite(before.config, { transport, extraWarnings: before.warnings });
+  console.log('\n=== 1) 방어 전 (defend OFF) ===');
+  console.log(renderConsole(r1, { color, quiet: true }));
+
+  const after = normalizeConfig(applyOverrides(raw, { 'attack.defend': true }), { env: process.env });
+  const r2 = await runSuite(after.config, { transport, extraWarnings: after.warnings });
+  console.log('=== 2) 방어 후 (defend ON, 가드 프롬프트 주입) ===');
+  console.log(renderConsole(r2, { color, quiet: true }));
+
+  console.log('=== 3) 폐루프 비교 ===');
+  console.log(renderCompareConsole(compareReports(r1, r2), { color }));
+
+  code = !r1.gate.pass && r2.gate.pass ? 0 : 1;
+  console.log(code === 0 ? 'demo OK: 방어 전 FAIL → 방어 후 PASS' : 'demo 기대와 다름: 방어 전 FAIL · 방어 후 PASS 가 아님');
+} finally {
+  await server.close();
 }
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function cfg(port) {
-  return {
-    url: `http://localhost:${port}`,
-    method: 'POST',
-    headers: '{"content-type":"application/json"}',
-    body: '{"system":"{{SYSTEM}}","messages":[{{MESSAGES}}]}',
-    responsePath: 'reply',
-    canary: 'CANARY-7Q2X',
-  };
-}
-const opts = { transforms: ['base64'], multiturn: true, threshold: 0 };
-
-async function run() {
-  let failures = 0;
-
-  const vuln = startMock(false, 8801);
-  await wait(400);
-  const r1 = await runSuite(cfg(8801), opts);
-  vuln.kill();
-  console.log(renderConsole(r1));
-  if (r1.gate.pass) { console.error('FAIL: 취약 엔드포인트인데 게이트가 PASS'); failures++; }
-  else console.log('  ✓ 취약 엔드포인트 → 게이트 FAIL (기대대로)\n');
-
-  const safe = startMock(true, 8802);
-  await wait(400);
-  const r2 = await runSuite(cfg(8802), opts);
-  safe.kill();
-  console.log(renderConsole(r2));
-  if (!r2.gate.pass) { console.error('FAIL: 방어 엔드포인트인데 게이트가 FAIL'); failures++; }
-  else console.log('  ✓ 방어 엔드포인트 → 게이트 PASS (기대대로)\n');
-
-  if (failures) { console.error(`\n데모 실패 ${failures}건`); process.exit(1); }
-  console.log('데모 통과: 취약→FAIL, 방어→PASS');
-}
-run().catch((e) => { console.error(e); process.exit(1); });
+process.exitCode = code;

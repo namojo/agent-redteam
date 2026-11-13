@@ -1,0 +1,29 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [20, 22, 24]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # no npm ci: zero runtime dependencies
+      - run: npm test
+      - run: node src/cli.mjs --help
+      - run: npm run demo
+      - run: node src/cli.mjs run --mock secure --quiet
+      - name: mock vulnerable must fail the gate (exit 1)
+        shell: bash
+        run: |
+          set +e
+          node src/cli.mjs run --mock vulnerable --quiet
+          code=$?
+          test "$code" -eq 1
+      - if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        run: node .claude/skills/redteam-qa/scripts/hygiene.mjs
