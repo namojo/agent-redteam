@@ -9,6 +9,7 @@ import {
   renderMarkdown, renderCompareMarkdown, compareReports, runPreflight, listProbes, TRANSFORMS,
   createMockTransport, MOCK_CANARY,
 } from '../core/index.mjs';
+import { jsonErrorText, collectSecrets, redact } from '../core/redaction.mjs';
 import { parseArgs, flagsToOverrides, renderHelp } from './args.mjs';
 import { createNodeTransport } from './transport.mjs';
 import { renderConsole, renderPreflight, renderCompareConsole, renderProbeList, renderPlan } from './console-render.mjs';
@@ -19,7 +20,12 @@ const CUSTOM_BODY = '{"system":"{{SYSTEM}}","message":"{{PROMPT}}"}';
 function readJsonFile(path) {
   let text = readFileSync(path, 'utf8');
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
-  return JSON.parse(text);
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    // never echo the file excerpt V8 quotes (it can contain a key) (C-2)
+    throw new Error(jsonErrorText(e));
+  }
 }
 
 function isV1(raw) {
@@ -36,6 +42,12 @@ export async function main(argv, io) {
   const err = (s) => io.stderr.write(s.endsWith('\n') ? s : s + '\n');
   const env = io.env || {};
   const cwd = io.cwd || '.';
+  let errorSecrets = [];
+  const configError = (e) => {
+    err('✗ 설정 오류:');
+    for (const x of e.errors.length ? e.errors : [{ path: '', message: e.message }]) err(`  - ${x.path || '(설정)'}: ${x.message}`);
+    return 2;
+  };
   try {
     let parsed;
     try {
@@ -67,7 +79,13 @@ export async function main(argv, io) {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { err('✗ 설정 파일은 JSON 객체여야 합니다'); return 2; }
       baseDir = dirname(file);
       if (isV1(raw)) {
-        const up = upgradeV1Config(raw);
+        let up;
+        try {
+          up = upgradeV1Config(raw);
+        } catch (e) {
+          if (e instanceof ConfigError) return configError(e);
+          throw e;
+        }
         raw = up.raw;
         extraWarnings.push(...up.warnings);
       }
@@ -100,13 +118,11 @@ export async function main(argv, io) {
       config = n.config;
       extraWarnings.push(...n.warnings);
     } catch (e) {
-      if (e instanceof ConfigError) {
-        err('✗ 설정 오류:');
-        for (const x of e.errors.length ? e.errors : [{ path: '', message: e.message }]) err(`  - ${x.path || '(설정)'}: ${x.message}`);
-        return 2;
-      }
+      if (e instanceof ConfigError) return configError(e);
       throw e;
     }
+
+    errorSecrets = collectSecrets(config);
 
     if (command === 'run' && flags['dry-run']) {
       out(renderPlan(buildPlan(config), config, extraWarnings, { color }));
@@ -139,8 +155,9 @@ export async function main(argv, io) {
         judgeTransport,
         network: config.network,
         judgeTarget: judgeActive ? config.judge.target : undefined,
+        secrets: errorSecrets,
       });
-      out(renderPreflight(result, { color }));
+      out(renderPreflight(result, { color, secrets: errorSecrets }));
       return result.ok ? 0 : 1;
     }
 
@@ -173,7 +190,7 @@ export async function main(argv, io) {
     }
     return report.gate.pass ? 0 : 1;
   } catch (e) {
-    err(`✗ 내부 오류: ${(e && e.stack) || e}`);
+    err(redact(`✗ 내부 오류: ${(e && e.stack) || e}`, errorSecrets));
     return 2;
   }
 }

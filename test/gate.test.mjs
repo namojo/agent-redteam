@@ -12,7 +12,7 @@ test('취약 0·오류 0 PASS', () => {
   assert.deepEqual(g.reasons, []);
   assert.match(g.summaryText, /배포 게이트 통과/);
   assert.deepEqual(g.thresholds, G);
-  assert.deepEqual(g.counts, { cases: 10, vulnerable: 0, errors: 0, inconclusive: 0 });
+  assert.deepEqual(g.counts, { cases: 10, vulnerable: 0, errors: 0, inconclusive: 0, blocked: 10 });
 });
 
 test('취약 초과 FAIL', () => {

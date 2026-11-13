@@ -9,7 +9,8 @@ import { TRANSFORMS } from './transforms.mjs';
 import { maskSensitive } from './oracles.mjs';
 import { evaluateTurn, aggregateTrial, aggregateCase } from './verdict.mjs';
 import { composeSystem } from './compat.mjs';
-import { createClient, redact } from './client.mjs';
+import { createClient } from './client.mjs';
+import { redact, sanitizeUrl, collectSecrets } from './redaction.mjs';
 import { isMockUrl } from './config.mjs';
 import { buildPlan } from './plan.mjs';
 import { buildJudgeMessages, parseJudgeOutput, buildCalibration, toolCallSummary } from './judge.mjs';
@@ -17,28 +18,7 @@ import { wilson } from './metrics.mjs';
 import { evaluateGate } from './gate.mjs';
 import { REGULATIONS } from './regulations.mjs';
 
-// Header values that are protocol constants, not secrets — redacting them would only garble reports.
-const NON_SECRET_HEADERS = new Set(['content-type', 'accept', 'anthropic-version', 'user-agent']);
-
-/** Remove userinfo and replace query values with *** */
-export function sanitizeUrl(url) {
-  if (typeof url !== 'string') return '';
-  return url
-    .replace(/^([a-z][a-z0-9+.-]*:\/\/)[^@/?#]*@/i, '$1')
-    .replace(/([?&][^=&#]+)=([^&#]*)/g, '$1=***');
-}
-
-export function collectSecrets(config) {
-  const out = [];
-  const add = (t) => {
-    if (!t) return;
-    out.push(t.apiKey);
-    for (const [k, v] of Object.entries(t.headers || {})) if (!NON_SECRET_HEADERS.has(k)) out.push(v);
-  };
-  add(config.target);
-  if (config.judge && config.judge.enabled) add(config.judge.target);
-  return [...new Set(out.filter((s) => typeof s === 'string' && s.length >= 4))].sort((a, b) => b.length - a.length);
-}
+export { sanitizeUrl, collectSecrets };
 
 function isAuthorizedOrMock(config) {
   const { target, judge } = config;
@@ -134,7 +114,8 @@ export async function runSuite(config, deps = {}) {
         const calibrate = config.judge.mode === 'all' && (trial.verdict === 'VULNERABLE' || trial.verdict === 'BLOCKED');
         if (lastOk && (resolve || calibrate)) {
           judgeStats.calls += 1;
-          const jm = buildJudgeMessages({ goal: c.probe.goal, responseText: lastOk.visible, toolCalls: lastOk.toolCalls, maxChars: config.judge.maxResponseChars });
+          // the judge sees masked/redacted text only (C-3): validated PII and secrets keep their shape but not their value
+          const jm = buildJudgeMessages({ goal: c.probe.goal, responseText: clean(lastOk.visible), toolCalls: (lastOk.toolCalls || []).map((tc) => ({ name: tc.name, arguments: maskDeep(tc.arguments ?? {}) })), maxChars: config.judge.maxResponseChars });
           const jr = await judgeClient.send({ system: jm.system, messages: jm.messages, tools: null });
           if (!jr.ok) {
             judgeStats.failures += 1;
@@ -208,6 +189,9 @@ export async function runSuite(config, deps = {}) {
   };
   for (const w of extraWarnings || []) addWarning(w);
   for (const w of plan.warnings) addWarning(w);
+  if (summary.cases > 0 && summary.inconclusive * 2 > summary.cases) {
+    addWarning({ code: 'MOSTLY_INCONCLUSIVE', level: 'warn', message: `미결 케이스가 전체의 절반을 넘습니다 (${summary.inconclusive}/${summary.cases}). 빈 응답·responsePath·추론 블록(thinking) 설정을 확인하십시오. 미결은 안전하다는 뜻이 아닙니다.` });
+  }
 
   let judgeSection = null;
   if (config.judge.enabled) {
@@ -231,7 +215,7 @@ export async function runSuite(config, deps = {}) {
     finishedAt: new Date(finishedAt).toISOString(),
     durationMs: Math.max(0, finishedAt - startedAt),
     target: {
-      provider: t.provider, url: sanitizeUrl(t.url), model: t.model, systemRole: t.systemRole,
+      provider: t.provider, url: redact(sanitizeUrl(t.url), secrets), model: t.model, systemRole: t.systemRole,
       headerNames: Object.keys(t.headers || {}), systemPromptSet: Boolean(t.systemPrompt),
       temperature: t.temperature ?? null, extraBodyKeys: Object.keys(t.extraBody || {}),
     },
@@ -244,7 +228,7 @@ export async function runSuite(config, deps = {}) {
       judge: {
         enabled: config.judge.enabled, mode: config.judge.mode, sameAsTarget: config.judge.sameAsTarget,
         provider: config.judge.enabled && jt ? jt.provider : null,
-        url: config.judge.enabled && jt ? sanitizeUrl(jt.url) : null,
+        url: config.judge.enabled && jt ? redact(sanitizeUrl(jt.url), secrets) : null,
         model: config.judge.enabled && jt ? jt.model : null,
       },
       gate: { ...config.gate },

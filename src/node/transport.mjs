@@ -5,6 +5,7 @@
 import http from 'node:http';
 import https from 'node:https';
 import { TransportError } from '../core/errors.mjs';
+import { sanitizeUrl } from '../core/redaction.mjs';
 
 const TLS_CODES = new Set([
   'CERT_HAS_EXPIRED', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'SELF_SIGNED_CERT_IN_CHAIN', 'DEPTH_ZERO_SELF_SIGNED_CERT',
@@ -39,7 +40,7 @@ export function createNodeTransport({ ca, insecure = false, _request } = {}) {
       try {
         url = new URL(req.url);
       } catch {
-        reject(new TransportError('NETWORK', `잘못된 URL: ${req.url}`));
+        reject(new TransportError('NETWORK', `잘못된 URL: ${sanitizeUrl(String(req.url))}`));
         return;
       }
       const isHttps = url.protocol === 'https:';

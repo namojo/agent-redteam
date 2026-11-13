@@ -4,20 +4,14 @@
  */
 import { buildRequest, parseResponse } from './compat.mjs';
 import { TransportError } from './errors.mjs';
+import { redact, secretsOf } from './redaction.mjs';
+
+export { redact };
 
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
 const MAX_WAIT_MS = 30000;
 
 const defaultSleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-/** Replace every secret string with *** */
-export function redact(text, secrets) {
-  let s = typeof text === 'string' ? text : String(text ?? '');
-  for (const sec of secrets || []) {
-    if (typeof sec === 'string' && sec.length >= 4) s = s.split(sec).join('***');
-  }
-  return s;
-}
 
 const DEFAULT_NETWORK = { timeoutMs: 60000, retries: 2, retryBaseDelayMs: 500, rpm: 0, delayMs: 0 };
 
@@ -29,7 +23,7 @@ const DEFAULT_NETWORK = { timeoutMs: 60000, retries: 2, retryBaseDelayMs: 500, r
 export function createClient(target, { transport, network = {}, sleep = defaultSleep, now = Date.now, secrets = [] } = {}) {
   if (typeof transport !== 'function') throw new TypeError('createClient: transport function required');
   const net = { ...DEFAULT_NETWORK, ...network };
-  const secretList = [...secrets, target.apiKey, ...Object.values(target.headers || {})].filter((s) => typeof s === 'string' && s.length >= 4);
+  const secretList = [...new Set([...(secrets || []), ...secretsOf(target)])].filter((s) => typeof s === 'string' && s.length >= 4).sort((a, b) => b.length - a.length);
   let sentCount = 0;
   let lastStart = null;
 

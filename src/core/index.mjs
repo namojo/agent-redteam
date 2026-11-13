@@ -21,3 +21,5 @@ export { REGULATIONS } from './regulations.mjs';
 export { mockAgent, mockOpenAIHandler, mockAnthropicHandler, mockLegacyHandler, MOCK_CANARY, MOCK_SYSTEM_PROMPT, MOCK_TOOLS } from './mock-agent.mjs';
 export { createMockTransport, createFetchTransport } from './transports.mjs';
 export { runPreflight } from './preflight.mjs';
+// additive (QA round 1): the central redaction set, for any UI that prints config-derived values
+export { collectSecrets, redact, sanitizeUrl } from './redaction.mjs';

@@ -6,6 +6,7 @@ import { ConfigError } from './errors.mjs';
 import { CATEGORY_ORDER } from './constants.mjs';
 import { PROBES } from './probes.mjs';
 import { TRANSFORM_IDS } from './transforms.mjs';
+import { jsonErrorText } from './redaction.mjs';
 
 function deepFreeze(o) {
   if (o && typeof o === 'object') {
@@ -90,7 +91,7 @@ export function upgradeV1Config(raw) {
       try {
         value = v.trim() ? JSON.parse(v) : {};
       } catch (e) {
-        throw new ConfigError('설정 오류', [{ path: 'headers', message: 'headers JSON 문자열을 해석할 수 없습니다: ' + e.message }]);
+        throw new ConfigError('설정 오류', [{ path: 'headers', message: 'headers JSON 문자열을 해석할 수 없습니다: ' + jsonErrorText(e) }]);
       }
     }
     if (k === 'judge') value = Boolean(v);
@@ -185,9 +186,12 @@ export function normalizeConfig(raw, { env = {}, baseDir = null } = {}) {
     if (bad.length) { err(path, `알 수 없는 값: ${bad.join(', ')}`); return [...def]; }
     return [...new Set(v)];
   };
+  // Every value pulled from the environment into a credential-bearing field is a secret (central redaction set).
+  const envSecrets = [];
   const subst = (value, path) => String(value).replace(ENV_RE, (m, name) => {
     const v = env ? env[name] : undefined;
     if (v === undefined || v === null) { err(path, `환경변수 ${name}이(가) 정의되지 않았습니다`); return ''; }
+    envSecrets.push({ path, value: String(v) });
     return String(v);
   });
 
@@ -267,7 +271,7 @@ export function normalizeConfig(raw, { env = {}, baseDir = null } = {}) {
           .replace(/\{\{MESSAGES\}\}/g, '{"role":"user","content":"test"}')
           .replace(/\{\{SYSTEM\}\}/g, '')
           .replace(/\{\{KEY\}\}/g, 'k');
-        try { JSON.parse(sample); } catch (e) { err(path + '.body', '템플릿 치환 결과가 JSON이 아닙니다: ' + e.message); }
+        try { JSON.parse(sample); } catch (e) { err(path + '.body', '템플릿 치환 결과가 JSON이 아닙니다: ' + jsonErrorText(e)); }
       }
     }
     return { provider: p, url, model, apiKey, headers, systemRole, systemPrompt, temperature, maxTokens, extraBody, sendTools, method, body, responsePath, toolCallsPath };
@@ -388,5 +392,12 @@ export function normalizeConfig(raw, { env = {}, baseDir = null } = {}) {
     warn('INSECURE_TLS', 'TLS 인증서 검증을 끈 상태입니다(insecure). 사내 CA는 tls.caFile 또는 NODE_EXTRA_CA_CERTS로 지정하십시오.');
   }
 
-  return { config: { version: 2, authorized, target, attack, oracles, judge, gate, network }, warnings };
+  // central redaction set: env values used in apiKey/headers/url (a value that is only the URL host is not a secret)
+  const hostOf = (u) => (/^[a-z][a-z0-9+.-]*:\/\/(?:[^@/?#]*@)?([^/?#:]*)/i.exec(u || '') || [])[1] || '';
+  const hostFor = (path) => hostOf(path.startsWith('judge') ? (judge.target && judge.target.url) : target.url);
+  const secrets = [...new Set(envSecrets
+    .filter(({ path, value }) => value.length >= 4 && !(path.endsWith('.url') && hostFor(path).includes(value)))
+    .map((x) => x.value))].sort((a, b) => b.length - a.length);
+
+  return { config: { version: 2, authorized, target, attack, oracles, judge, gate, network, secrets }, warnings };
 }

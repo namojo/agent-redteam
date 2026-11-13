@@ -2,6 +2,7 @@
  * Terminal renderers. Pure string builders (no I/O), color optional.
  */
 import { VERSION, VERDICT_LABELS } from '../core/constants.mjs';
+import { redact, sanitizeUrl, collectSecrets } from '../core/redaction.mjs';
 
 const ANSI = { red: 31, green: 32, yellow: 33, gray: 90, bold: 1, cyan: 36 };
 const paint = (color) => (code, s) => (color ? `\x1b[${ANSI[code]}m${s}\x1b[0m` : s);
@@ -101,7 +102,7 @@ export function renderPlan(plan, config, warnings = [], { color = false } = {}) 
   const L = [];
   L.push('');
   L.push(c('bold', `  agent-redteam ${VERSION} · 실행 계획 (dry-run, 요청 없음)`));
-  L.push(`  대상   ${config.target.provider} · ${config.target.url}${config.target.model ? ' · ' + config.target.model : ''}`);
+  L.push(`  대상   ${config.target.provider} · ${sanitizeUrl(config.target.url)}${config.target.model ? ' · ' + config.target.model : ''}`);
   L.push(RULE);
   for (const cs of plan.cases) L.push(`  ${pad(cs.probe.category, 6)} ${pad(cs.caseId, 36)} ${cs.kind === 'crescendo' ? `멀티턴 ${cs.turns.length}턴` : '단일'}${cs.sendTools ? ' · 도구 정의 전송' : ''}`);
   L.push(RULE);
@@ -111,12 +112,12 @@ export function renderPlan(plan, config, warnings = [], { color = false } = {}) 
   const all = [...warnings, ...plan.warnings].filter((w, i, arr) => arr.findIndex((x) => x.code === w.code && x.message === w.message) === i);
   for (const w of all) L.push(`  ${c('yellow', '경고')}   [${w.code}] ${w.message}`);
   L.push('');
-  return L.join('\n');
+  return redact(L.join('\n'), collectSecrets(config));
 }
 
 const PF = { ok: ['✓', 'green'], warn: ['!', 'yellow'], fail: ['✗', 'red'], skip: ['-', 'gray'] };
 
-export function renderPreflight(result, { color = false } = {}) {
+export function renderPreflight(result, { color = false, secrets = [] } = {}) {
   const c = paint(color);
   const L = [];
   L.push('');
@@ -139,7 +140,7 @@ export function renderPreflight(result, { color = false } = {}) {
   }
   L.push(result.ok ? c('green', '  ✓ 사전 점검 통과 (fail 없음)') : c('red', '  ✗ 사전 점검 실패 — fail 항목을 먼저 해결하십시오'));
   L.push('');
-  return L.join('\n');
+  return redact(L.join('\n'), secrets);
 }
 
 export function renderCompareConsole(cmp, { color = false } = {}) {
@@ -147,13 +148,15 @@ export function renderCompareConsole(cmp, { color = false } = {}) {
   const L = [];
   L.push('');
   L.push(c('bold', `  agent-redteam ${VERSION} · 폐루프 비교`));
-  L.push(`  전체 차단률 ${pct1(cmp.blockRate)}  (취약 케이스 ${cmp.before.vulnerableCases}/${cmp.before.cases} → ${cmp.after.vulnerableCases}/${cmp.after.cases})`);
+  L.push(`  전체 차단률 ${pct1(cmp.blockRate)}  (취약 케이스 ${cmp.before.vulnerableCases}/${cmp.before.cases} → ${cmp.after.vulnerableCases}/${cmp.after.cases} · 비교 불가 ${(cmp.uncomparable || []).length}건)`);
+  if (cmp.trustworthy === false) L.push(c('red', '  ✗ 오류(측정 실패) 케이스가 있어 이 차단률을 신뢰할 수 없습니다'));
   L.push(RULE);
   for (const [cat, x] of Object.entries(cmp.byCategory)) {
     L.push(`  ${pad(cat, 6)} ${pad(x.title, 20)} 전 ${ci(x.before.asr)} → 후 ${ci(x.after.asr)} · 차단률 ${pct1(x.blockRate)}${x.ciOverlap ? c('yellow', ' · 차이를 단정할 수 없음') : ''}`);
   }
   L.push(RULE);
   L.push(`  고쳐진 케이스 ${cmp.fixed.length}건${cmp.fixed.length ? ': ' + truncate(cmp.fixed.join(', '), 100) : ''}`);
+  if ((cmp.becameInconclusive || []).length) L.push(`  (고쳐진 케이스 중 미결로 바뀐 ${cmp.becameInconclusive.length}건은 차단이 확인되지 않음)`);
   L.push(`  새로 뚫린 케이스 ${cmp.regressed.length}건${cmp.regressed.length ? ': ' + truncate(cmp.regressed.join(', '), 100) : ''}`);
   for (const w of cmp.warnings) L.push(`  ${c('yellow', '경고')}   [${w.code}] ${w.message}`);
   L.push('');

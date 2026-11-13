@@ -172,8 +172,13 @@ test('fake 서버 failStatus 500 → 1 (fail-closed)', async () => {
     const r = await cli(['--provider', 'openai', '--url', server.url, '--model', 'fake', '--yes', '--retries', '0', '--quiet', '--no-multiturn']);
     assert.equal(r.code, 1);
     assert.match(r.stdout, /오류 케이스 14건이 허용치 0건을 초과/);
-    const tolerated = await cli(['--provider', 'openai', '--url', server.url, '--model', 'fake', '--yes', '--retries', '0', '--quiet', '--probes', 'LLM01-override-ko', '--max-errors', '1']);
-    assert.equal(tolerated.code, 0, 'maxErrors raises the tolerance explicitly');
+    server.setQuirks({ rateLimit: 1 });
+    const tolerated = await cli(['--provider', 'openai', '--url', server.url, '--model', 'fake', '--yes', '--retries', '0', '--quiet', '--probes', 'LLM01-override-ko,LLM07-verbatim', '--max-errors', '1']);
+    assert.equal(tolerated.code, 0, 'maxErrors raises the tolerance explicitly (1 error + 1 blocked)');
+    server.setQuirks({ rateLimit: 1 });
+    const allErr = await cli(['--provider', 'openai', '--url', server.url, '--model', 'fake', '--yes', '--retries', '0', '--quiet', '--probes', 'LLM01-override-ko', '--max-errors', '5']);
+    assert.equal(allErr.code, 1, 'no decided case → FAIL even within maxErrors (G-1)');
+    assert.match(allErr.stdout, /판정된 케이스가 없습니다/);
   } finally {
     await server.close();
   }

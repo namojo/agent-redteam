@@ -4,8 +4,19 @@
 import { VERDICT_LABELS, SOURCE_LABELS } from './constants.mjs';
 
 export function mdCell(s) {
-  const t = String(s ?? '').replace(/\r?\n|\r/g, ' ').replace(/\|/g, '\\|');
-  return t.length > 200 ? t.slice(0, 199) + '…' : t;
+  let t = String(s ?? '').replace(/\r?\n|\r/g, ' ');
+  if (t.length > 200) t = t.slice(0, 199) + '…';
+  // target text must not turn into Markdown/HTML (C-4)
+  return t.replace(/\|/g, '\\|').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Inline code span that survives backticks inside the text (C-4). */
+export function inlineCode(s) {
+  const t = String(s ?? '').replace(/\r?\n|\r/g, ' ');
+  let ticks = '`';
+  while (t.includes(ticks)) ticks += '`';
+  const pad = t.startsWith('`') || t.endsWith('`') ? ' ' : '';
+  return ticks + pad + t + pad + ticks;
 }
 
 export const pct = (x) => (x === null || x === undefined ? 'n/a' : (x * 100).toFixed(1) + '%');
@@ -116,8 +127,8 @@ export function renderMarkdown(report) {
     L.push(`### ${c.caseId} — ${c.title}`);
     L.push('');
     L.push(`- OWASP ${c.category} · 변형 ${c.transformLabel} · 근거 ${SOURCE_LABELS[c.source] || c.source} · 취약 시도 ${c.vulnerableTrials}/${c.trials.length}`);
-    L.push(`- 사유: ${c.reason}`);
-    if (c.evidence) L.push(`- 증거: ${String(c.evidence).replace(/\r?\n/g, ' ')}`);
+    L.push(`- 사유: ${inlineCode(c.reason)}`);
+    if (c.evidence) L.push(`- 증거: ${inlineCode(c.evidence)}`);
     L.push('');
     const trial = c.trials.find((t) => t.verdict === 'VULNERABLE') || c.trials[0];
     for (const t of trial ? trial.turns : []) {
@@ -172,8 +183,12 @@ export function renderCompareMarkdown(cmp) {
   L.push('');
   L.push('## 차단률');
   L.push('');
-  L.push(`전체 차단률: **${pct(cmp.blockRate)}** (취약 케이스 ${cmp.before.vulnerableCases}/${cmp.before.cases} → ${cmp.after.vulnerableCases}/${cmp.after.cases})`);
+  L.push(`전체 차단률: **${pct(cmp.blockRate)}** (취약 케이스 ${cmp.before.vulnerableCases}/${cmp.before.cases} → ${cmp.after.vulnerableCases}/${cmp.after.cases} · 비교 가능 ${cmp.comparableCases ?? '-'}건 · 비교 불가 ${(cmp.uncomparable || []).length}건)`);
   L.push('');
+  if (cmp.trustworthy === false) {
+    L.push('> 경고: 오류(측정 실패) 케이스가 있어 이 차단률을 신뢰할 수 없습니다. 오류를 해결한 뒤 다시 비교하십시오.');
+    L.push('');
+  }
   L.push('| OWASP | 항목 | 전 취약 | 후 취약 | 전 ASR (95% CI) | 후 ASR (95% CI) | 차단률 | 비고 |');
   L.push('|---|---|---|---|---|---|---|---|');
   for (const [cat, c] of Object.entries(cmp.byCategory)) {
@@ -184,6 +199,11 @@ export function renderCompareMarkdown(cmp) {
   L.push('');
   if (cmp.fixed.length) for (const id of cmp.fixed) L.push(`- ${id}`);
   else L.push('없음');
+  L.push('');
+  if ((cmp.becameInconclusive || []).length) {
+    L.push('');
+    L.push(`이 중 미결로 바뀐 케이스 ${cmp.becameInconclusive.length}건은 차단이 확인된 것이 아닙니다: ${cmp.becameInconclusive.join(', ')}`);
+  }
   L.push('');
   L.push('## 새로 뚫린 케이스');
   L.push('');

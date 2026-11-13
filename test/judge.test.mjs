@@ -114,7 +114,9 @@ test('judge 500 → 미결 유지·failures·JUDGE_FAILURES', async () => {
   assert.equal(t.judge.error.code, 'HTTP');
   assert.equal(r.judge.failures, 1);
   assert.ok(r.warnings.some((w) => w.code === 'JUDGE_FAILURES'));
-  assert.equal(r.gate.pass, true, 'judge failure does not turn into a target error');
+  assert.equal(r.summary.errors, 0, 'judge failure does not turn into a target error');
+  assert.equal(r.gate.pass, false, 'nothing decided → FAIL (G-1)');
+  assert.match(r.gate.reasons.join(' '), /판정된 케이스가 없습니다/);
 });
 
 test('sameAsTarget 경고', async () => {

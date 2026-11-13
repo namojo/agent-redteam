@@ -148,7 +148,7 @@ export function parseResponse(target, response) {
     if (typeof message.content === 'string') text = message.content;
     else if (Array.isArray(message.content)) text = message.content.map((p) => (p && typeof p.text === 'string' ? p.text : typeof p === 'string' ? p : '')).join('');
     let toolCalls = [];
-    if (Array.isArray(message.tool_calls)) {
+    if (Array.isArray(message.tool_calls) && message.tool_calls.length) {
       toolCalls = message.tool_calls
         .filter((c) => c && c.function && c.function.name)
         .map((c) => ({ id: c.id ?? null, name: c.function.name, arguments: parseArgs(c.function.arguments) }));

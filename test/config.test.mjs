@@ -27,6 +27,7 @@ test('최소 openai 설정의 정규화 결과 전체 deepEqual(2.2 shape)', () 
     judge: { enabled: false, mode: 'fallback', target: null, sameAsTarget: true, maxResponseChars: 2000 },
     gate: { maxVulnerable: 0, maxErrors: 0, failOnInconclusive: false },
     network: { timeoutMs: 60000, retries: 2, retryBaseDelayMs: 500, rpm: 0, delayMs: 0, tls: { caFile: '', insecure: false } },
+    secrets: [],
   });
 });
 

@@ -2,6 +2,7 @@
  * CLI flag table (single source for the parser, help text and tests) and argument parser.
  */
 import { ConfigError } from '../core/errors.mjs';
+import { jsonErrorText } from '../core/redaction.mjs';
 
 export const COMMANDS = ['run', 'probe', 'compare', 'list'];
 const RP = ['run', 'probe'];
@@ -87,7 +88,7 @@ function convert(flag, raw, token) {
       return raw.split(',').map((s) => s.trim()).filter(Boolean);
     case 'json': {
       let v;
-      try { v = JSON.parse(raw); } catch (e) { throw usage(`${token} 값이 JSON이 아닙니다: ${e.message}`); }
+      try { v = JSON.parse(raw); } catch (e) { throw usage(`${token} 값이 JSON이 아닙니다: ${jsonErrorText(e)}`); }
       if (!v || typeof v !== 'object' || Array.isArray(v)) throw usage(`${token} 값은 JSON 객체여야 합니다`);
       return v;
     }
