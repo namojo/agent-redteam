@@ -13,7 +13,7 @@ description: agent-redteam 통합 검증 체크리스트 — 문서 주장↔코
 npm test                                         # LLM·네트워크 없이 그린이어야 함
 node .claude/skills/redteam-qa/scripts/hygiene.mjs   # 공개 저장소 위생
 node src/cli.mjs --help                          # 종료코드 0
-npm run site:build                               # 사이트가 있으면
+node site/build.mjs                              # 사이트가 있으면 (먼저 npm ci --prefix site)
 ```
 
 ## 2. 교차 비교 체크리스트

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{{title}}</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <a class="skip" href="#main">본문으로 건너뛰기</a>
+  <header class="site-header">
+    <div class="bar">
+      <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span>agent-redteam</a>
+      <nav aria-label="사이트">
+        <ul>
+          {{nav}}
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main id="main" class="doc">
+{{content}}
+  </main>
+  <footer class="site-footer">
+    <p>이 페이지의 원문: <a href="{{source}}" rel="noopener">{{sourceName}}</a> · MIT License</p>
+  </footer>
+  {{mermaid}}
+</body>
+</html>

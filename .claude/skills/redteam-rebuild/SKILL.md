@@ -39,7 +39,8 @@ redteam-architect 1회. 명세를 받으면 오케스트레이터가 범위가 �
 ### Phase 3: 구현
 1. engine-developer (core API가 웹·문서의 전제이므로 먼저). 끝나면 오케스트레이터가 `npm test`를 직접 돌려 확인한다.
 2. QA 1차(엔진 범위만) — 판정·게이트 결함은 여기서 잡는다.
-3. web-developer와 docs-writer를 **병렬**(`run_in_background: true`, 한 메시지에서 두 호출). 둘은 서로 다른 파일만 만진다: web은 `web/ site/ .github/workflows/pages.yml package*.json`, docs는 `README.md docs/`.
+3. web-developer와 docs-writer를 **병렬**(`run_in_background: true`, 한 메시지에서 두 호출). 둘은 서로 다른 파일만 만진다: web은 `web/ site/ .github/workflows/pages.yml`(빌드 의존성은 `site/package.json`), docs는 `README.md docs/`. 루트 `package.json`은 engine-developer 소유.
+   - 사이트 빌드 인프라(`site/`, pages.yml)는 core API에 의존하지 않으므로 Phase 3-1과 병렬로 먼저 시작해도 된다. 웹 콘솔(`web/`)만 엔진 notes가 나온 뒤에 한다.
 
 ### Phase 4: 통합 검증
 qa-verifier 전체 범위. 결함이 있으면 담당 에이전트를 결함 ID와 함께 재호출 → QA 재검증. 최대 2회 반복, 그래도 남으면 사용자에게 남은 결함을 보고하고 판단을 받는다.

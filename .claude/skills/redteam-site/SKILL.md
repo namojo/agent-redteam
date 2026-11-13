@@ -23,12 +23,13 @@ _site/               빌드 결과 (gitignore)
 
 ## 2. 빌드 원칙
 
-- Markdown 변환은 빌드 시점에 한다(devDependency `marked`, 버전 고정 `--save-exact`). 런타임 dependencies는 계속 0개.
+- Markdown 변환은 빌드 시점에 한다(`marked`, 버전 고정 `--save-exact`). 빌드 의존성은 **`site/package.json`·`site/package-lock.json`에만** 둔다 — 루트 `package.json`은 devDependencies까지 0개로 유지해 도구 반입(`npm pack`)과 엔진 작업에 영향을 주지 않는다. 설치는 `npm ci --prefix site`.
 - **Mermaid는 CDN이 아니라 사이트에 자체 호스팅**한다: 빌드가 `node_modules/mermaid/dist/mermaid.min.js`를 `_site/assets/`로 복사. 사내망에서 CDN이 막혀도 다이어그램이 보이고, 버전이 고정된다.
 - ```` ```mermaid ```` 코드 블록은 `<pre class="mermaid">`(HTML 이스케이프한 원문)로 바꾸고 `mermaid.initialize({ startOnLoad: true, securityLevel: 'strict' })`. 다크 모드면 `theme: 'dark'`.
 - 문서 사이 링크(`docs/MANUAL.md`, `MANUAL.md#앵커`)를 사이트 경로로 다시 쓴다. 저장소 밖 파일 링크(src/ 등)는 GitHub blob URL로.
 - 헤딩 id는 GitHub와 같은 규칙(소문자, 공백→`-`, 구두점 제거, 한글 유지)으로 만들어 문서 내 목차 앵커가 동작하게 한다.
-- `package.json` scripts: `site:build`, `site:serve`(의존성 없는 node:http 정적 서버).
+- 실행: `node site/build.mjs`(→ `_site/`), `node site/serve.mjs`(의존성 없는 node:http 정적 서버, 기본 포트 4173). 루트 `package.json`의 `site:build`·`site:serve` 스크립트는 엔진 작업이 끝난 뒤 추가한다.
+- `site/build.mjs`는 `node_modules`가 없으면 `npm ci --prefix site`를 안내하고 종료코드 2로 끝난다.
 
 ## 3. Mermaid 안전 규칙
 
@@ -42,12 +43,12 @@ _site/               빌드 결과 (gitignore)
 
 ## 5. 배포 워크플로
 
-- `.github/workflows/pages.yml`: push to main(+ workflow_dispatch) → `npm ci` → `npm run site:build` → `actions/upload-pages-artifact` → `actions/deploy-pages`. 권한 `pages: write`, `id-token: write`. concurrency group `pages`.
+- `.github/workflows/pages.yml`: push to main(+ workflow_dispatch) → `npm ci --prefix site` → `node site/build.mjs` → `actions/upload-pages-artifact` → `actions/deploy-pages`. 권한 `pages: write`, `id-token: write`. concurrency group `pages`.
 - Pages 소스는 "GitHub Actions"로 설정한다(`gh api -X POST repos/{owner}/{repo}/pages -f build_type=workflow`). 이 활성화는 사용자 승인 후 오케스트레이터가 한다.
 
 ## 6. 검증 (완료 조건)
 
-로컬: `npm run site:build && npm run site:serve` 후 브라우저에서
+로컬: `node site/build.mjs && node site/serve.mjs` 후 브라우저에서
 1. 모든 내비게이션 링크가 200
 2. Mermaid가 있는 페이지마다 `pre.mermaid svg`가 생기고 "Syntax error" 텍스트가 없음
 3. 웹 콘솔 데모 실행 → 취약 모드 게이트 FAIL, 방어 모드 PASS

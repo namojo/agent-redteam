@@ -1,0 +1,15 @@
+{
+  "name": "agent-redteam-site",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Static site build for agent-redteam (GitHub Pages). Build-only dependencies; the tool itself has none.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "serve": "node serve.mjs"
+  },
+  "dependencies": {
+    "marked": "18.1.1",
+    "mermaid": "12.2.0"
+  }
+}
