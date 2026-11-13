@@ -34,6 +34,10 @@ function bootError(message) {
   el.textContent = message;
 }
 
+// Forms never submit natively (that would reload the page). Run buttons stay disabled in the HTML
+// until start() has wired the handlers; if the engine fails to load they stay disabled.
+for (const id of ['demo-form', 'live-form']) $(id).addEventListener('submit', (e) => e.preventDefault());
+
 import('../src/core/index.mjs')
   .then((core) => start(core))
   .catch((e) => bootError('엔진(src/core)을 불러오지 못했습니다: ' + ((e && e.message) || e) + ' — 최신 브라우저(정규식 lookbehind 지원, Safari 16.4 이상)가 필요합니다.'));
@@ -304,7 +308,8 @@ function start(core) {
     const er = plan.estimatedRequests;
     const judge = er.judgeMax ? ` · judge 최대 ${er.judgeMax}회 · 합계 최대 ${er.total}회` : '';
     const skipped = plan.skipped.length ? ` · 건너뛸 프로브 ${plan.skipped.length}개` : '';
-    const retries = config.network.retries > 0 ? ` (재시도 시 최대 ×${config.network.retries + 1})` : '';
+    // only real network targets retry; the in-browser mock answers every request once
+    const retries = !isMockUrl(config.target.url) && config.network.retries > 0 ? ` (재시도 시 최대 ×${config.network.retries + 1})` : '';
     return `케이스 ${plan.cases.length}개 · 대상 요청 최대 ${er.target}회${retries}${judge}${skipped}`;
   }
 
@@ -599,7 +604,12 @@ function start(core) {
   });
 
   // ---------------------------------------------------------------------------
-  // results rendering (reads only report fields listed in spec 9.5 + plain metadata)
+  // results rendering. Display only: no verdict/gate logic here. Reads the spec 9.5 fields plus other
+  // report fields that exist in every report (spec 7): target.*, settings.attack/judge.*, tool.version,
+  // schemaVersion, startedAt/finishedAt/durationMs, plan.cases, gate.thresholds.*, summary.trials/asr,
+  // judge.*, cases[].{probeId,kind,vulnerableTrials,errorTrials}, trials[].{index,verdict,source,reason,
+  // evidence,vulnerableTurn,error,judge}, turns[].{verdict,source,evidence,latencyMs,reasoningStripped,error},
+  // optional aborted, and the Comparison fields (spec 3.13 + engine notes §1.2).
 
   const REPORT_TITLES = { before: '방어 전 (defend OFF)', after: '방어 후 (defend ON)', live: '점검 결과' };
   // ABORTED is not repeated here: it is already the banner and the first gate reason
@@ -630,6 +640,33 @@ function start(core) {
       }, REPORT_TITLES[k]))));
   }
 
+  // caseId lists in a Comparison. Known keys get Korean titles; any other top-level string[] field
+  // (core may add more, e.g. a list of after-run INCONCLUSIVE cases) is still listed under its key name.
+  const CMP_LISTS = [
+    ['fixed', '고쳐진 케이스', true],
+    ['regressed', '새로 뚫린 케이스', true],
+    ['becameInconclusive', '취약 → 미결로 바뀐 케이스 (차단이 확인된 것은 아님)', false],
+    ['onlyInBefore', '방어 전에만 있는 케이스', false],
+    ['onlyInAfter', '방어 후에만 있는 케이스', false],
+  ];
+  const CMP_SKIP = new Set(['uncomparable', 'warnings']); // uncomparable is shown in the trust box
+
+  function idListsFor(cmp) {
+    const idList = (title, ids) => h('details', {},
+      h('summary', {}, `${title} ${ids.length}건`),
+      ids.length ? h('p', { class: 'idlist' }, ids.join(', ')) : h('p', {}, '없음'));
+    const isIdArray = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string');
+    const out = [];
+    for (const [key, title, always] of CMP_LISTS) {
+      if (isIdArray(cmp[key]) && (always || cmp[key].length)) out.push(idList(title, cmp[key]));
+    }
+    const known = new Set([...CMP_LISTS.map(([k]) => k), ...CMP_SKIP]);
+    for (const [key, v] of Object.entries(cmp)) {
+      if (!known.has(key) && isIdArray(v) && v.length) out.push(idList(`${key}`, v));
+    }
+    return out;
+  }
+
   function renderCompare() {
     const cmp = state.comparison;
     const box = $('compare');
@@ -653,9 +690,7 @@ function start(core) {
       h('td', { class: 'num' }, typeof c.uncomparable === 'number' ? c.uncomparable : '—'),
       h('td', {}, c.ciOverlap ? '차이를 단정할 수 없음 (95% 구간 겹침)' : ''),
     ));
-    const idList = (title, ids) => h('details', {},
-      h('summary', {}, `${title} ${ids.length}건`),
-      ids.length ? h('p', { class: 'idlist' }, ids.join(', ')) : h('p', {}, '없음'));
+    const cmpWarnings = Array.isArray(cmp.warnings) ? cmp.warnings : [];
     box.replaceChildren(h('section', { class: 'compare', 'aria-labelledby': 'cmp-title' },
       h('h3', { id: 'cmp-title' }, '폐루프 비교 — 방어 OFF → ON'),
       h('p', {},
@@ -669,8 +704,12 @@ function start(core) {
         h('p', {}, h('strong', {}, '이 차단률은 신뢰할 수 없습니다.'),
           unc.length ? ` 전/후 중 한쪽이 오류인 케이스 ${unc.length}건은 측정되지 않아 계산에서 빠졌습니다.` : '',
           afterErr ? ` 방어 후 리포트에 오류 케이스 ${afterErr}건이 있습니다.` : '',
-          ' 오류 원인을 고친 뒤 다시 비교하십시오.'),
+          ' 아래 비교 경고의 원인을 해소한 뒤 다시 비교하십시오.'),
         unc.length ? h('p', { class: 'idlist' }, unc.join(', ')) : null) : null,
+      // every compare warning, whatever its code (new codes from core render the same way)
+      cmpWarnings.length ? h('div', { class: 'callout callout-warn', role: 'note' },
+        h('p', {}, h('strong', {}, `비교 경고 ${cmpWarnings.length}건`)),
+        h('ul', {}, cmpWarnings.map((w) => h('li', {}, h('code', {}, w.code || 'WARNING'), ` ${w.message || ''}`)))) : null,
       h('div', { class: 'table-wrap', tabindex: '0', role: 'region', 'aria-label': '카테고리별 전후 비교 표' },
         h('table', {},
           h('thead', {}, h('tr', {},
@@ -679,10 +718,7 @@ function start(core) {
             h('th', { scope: 'col', class: 'num' }, '전 ASR (95% CI)'), h('th', { scope: 'col', class: 'num' }, '후 ASR (95% CI)'),
             h('th', { scope: 'col', class: 'num' }, '차단률'), h('th', { scope: 'col', class: 'num' }, '비교 불가'), h('th', { scope: 'col' }, '비고'))),
           h('tbody', {}, rows))),
-      idList('고쳐진 케이스', cmp.fixed),
-      idList('새로 뚫린 케이스', cmp.regressed),
-      Array.isArray(cmp.becameInconclusive) && cmp.becameInconclusive.length ? idList('취약 → 미결로 바뀐 케이스 (차단률에는 들어가지만 차단이 확인된 것은 아님)', cmp.becameInconclusive) : null,
-      cmp.warnings && cmp.warnings.length ? h('ul', { class: 'plain' }, cmp.warnings.map((w) => h('li', {}, `[${w.code}] ${w.message}`))) : null,
+      idListsFor(cmp),
       h('div', { class: 'downloads' },
         h('button', { type: 'button', class: 'btn btn-small', onclick: () => download(`agent-redteam-compare-${stamp(cmp.after.finishedAt)}.md`, renderCompareMarkdown(cmp), 'text/markdown') }, '비교 리포트 Markdown 내려받기')),
     ));
@@ -895,4 +931,9 @@ function start(core) {
     dialog.showModal();
     $('case-dialog-close').focus();
   }
+
+  // engine ready: enable the demo run (the live run follows the authorization checkbox)
+  $('demo-run').disabled = false;
+  $('demo-run').removeAttribute('aria-busy');
+  updateLiveRunButton();
 }

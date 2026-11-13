@@ -5,10 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# least privilege: the workflow only reads the repo; Pages write + OIDC are granted to the deploy job alone
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -17,6 +16,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read      # actions/configure-pages reads the Pages site settings
     steps:
       - uses: actions/checkout@v7
 
@@ -25,6 +27,11 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: site/package-lock.json
+
+      # the console ships src/core as-is: a red engine must never be deployed.
+      # root package.json has zero dependencies, so no install is needed for the tests.
+      - name: Engine tests
+        run: npm test
 
       - name: Install site build dependencies
         run: npm ci --prefix site
@@ -41,6 +48,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

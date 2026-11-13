@@ -66,9 +66,9 @@
             </div>
           </div>
         </fieldset>
-        <p class="estimate" id="demo-estimate"></p>
+        <p class="estimate" id="demo-estimate">엔진을 불러오는 중…</p>
         <div class="actions">
-          <button type="submit" class="btn btn-primary" id="demo-run">공격 실행</button>
+          <button type="submit" class="btn btn-primary" id="demo-run" disabled aria-busy="true">공격 실행</button>
           <button type="button" class="btn" id="demo-defend" disabled aria-describedby="demo-defend-hint">방어 적용 후 재시험</button>
         </div>
         <p class="hint" id="demo-defend-hint">“방어 적용 후 재시험”은 직전 “공격 실행”과 같은 설정에 방어(<code>attack.defend</code>)만 켜서 다시 실행하고 전후 차단률을 비교합니다. 공격을 한 번 실행하면 활성화됩니다.</p>
